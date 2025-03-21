@@ -1,0 +1,9 @@
+[package]
+name = "logging-service"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+http_reader = {path = "../http_reader"}
+http = "1.3.1"
+uuid = {version = "1.16.0", features = ["v4"]}
