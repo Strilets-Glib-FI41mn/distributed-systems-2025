@@ -97,12 +97,12 @@ fn handle_connection(mut stream: TcpStream, data: Arc<Mutex<HashMap<Uuid, String
             //let response = "HTTP/1.1 200 OK\r\n\r\n";
             let storage = data.lock().unwrap();
             let body: Vec<_> = storage.iter().map(|(_, msg)| msg.clone()).collect();
-            let body = format!("{}", body.join(", "));
+            let body = body.join(", ").to_string();
             let length = body.as_bytes().len();
             
             let response = format!("HTTP/1.1 202 Ok\nContent-Length: {length}\n\n{body}");
             
-            stream.write_all(format!("{}",response).as_bytes()).unwrap();
+            stream.write_all(response.to_string().as_bytes()).unwrap();
         }
         _ =>{
             

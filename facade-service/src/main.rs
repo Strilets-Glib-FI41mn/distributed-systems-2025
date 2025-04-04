@@ -6,16 +6,16 @@
 //use std::{env, io::BufReader, net::{TcpListener, TcpStream}};
 /* */
 use std::{
-    collections::HashMap, env, hash::Hash, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, str::FromStr
+    env, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}
 };
 use http_reader::HttpReader;
 //use reqwest::blocking::{Request, RequestBuilder};
-use reqwest::blocking::{Client, ClientBuilder};
+use reqwest::blocking::Client;
 use uuid::Uuid;
 fn main() {
     let mut port = "7878".to_owned();
     let mut logging_service_port = "9898".to_owned();
-    let mut message_service_port = "7325".to_owned();
+    let message_service_port = "7325".to_owned();
     let mut show_debug = false;
     let args: Vec<_> = env::args().skip(1).collect();
     for arg in &args{
@@ -62,7 +62,7 @@ fn main() {
         }
         println!("using port {port}")
     }
-    if &port == &logging_service_port{
+    if port == logging_service_port{
         panic!("facade port {} is equal to logging port {}",&port, &logging_service_port);
     }
     let address: String = "127.0.0.1:".to_owned() + &port;
@@ -105,13 +105,13 @@ fn handle_connection(mut stream: TcpStream, logging_adress: &str, message_adress
         http::Method::GET => {
             let http_client = Client::new();
             let http_result = http_client
-                .get(format!("{}", logging_adress))
+                .get(logging_adress.to_string())
                 .send();
 
             
             let http_client = Client::new();
             let http_result_message = http_client
-                .get(format!("{}", message_adress))
+                .get(message_adress.to_string())
                 .send();
             let response = 
             

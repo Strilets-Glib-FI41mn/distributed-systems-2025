@@ -14,12 +14,10 @@ mod tests {
 }*/
 
 
-use http::{request, HeaderName, HeaderValue, Request, Response, StatusCode, Version};
-use serde;
-use serde_json;
+use http::{HeaderName, HeaderValue, Request, Version};
 
 use std::{
-    collections::HashMap, env, hash::Hash, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, str::FromStr
+    io::{prelude::*, BufReader}, net::TcpStream, str::FromStr
 };
 
 pub struct HttpReader<'a>{
@@ -29,7 +27,7 @@ pub struct HttpReader<'a>{
 }
 impl <'a> HttpReader<'a> {
     pub fn new(buf_reader: &'a mut BufReader<&'a TcpStream>) -> Self{
-        return {
+        {
             Self { buf_reader, line: "".to_string(), found_empty_line: false }
         }
     }
@@ -40,7 +38,7 @@ impl <'a> HttpReader<'a> {
         let mut buf:Vec<u8> = vec![0; content_length];
         let _ = self.buf_reader.read(&mut buf);
         //return String::from_utf8(buf).ok();
-        return Some(String::from_utf8(buf).unwrap());
+        Some(String::from_utf8(buf).unwrap())
     }
     pub fn make_request(&mut self) -> Request<Option<String>>{
         let mut http_request: Vec<_> =  self.collect();
@@ -50,9 +48,7 @@ impl <'a> HttpReader<'a> {
         .filter(|line| {
             line.contains("Content-Length:")||line.contains("content-length:")
         })
-        .filter_map(|line| {line.split(": ")}
-        .skip(1)
-        .next()?
+        .filter_map(|line| {line.split(": ")}.nth(1)?
         .parse::<usize>()
         .ok())
         .next();
@@ -99,7 +95,7 @@ impl <'a> HttpReader<'a> {
         request
     }
 }
-impl <'a> Iterator for &mut HttpReader <'a>{
+impl  Iterator for &mut HttpReader <'_>{
     type Item = String;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -116,7 +112,7 @@ impl <'a> Iterator for &mut HttpReader <'a>{
                             self.found_empty_line = true;
                             return None;
                         }
-                        return Some(self.line.clone());
+                        Some(self.line.clone())
                     },
                     false => {
                         None

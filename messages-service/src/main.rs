@@ -1,4 +1,4 @@
-use std::{collections::HashMap, env, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, str::FromStr, sync::{Arc, Mutex}};
+use std::{env, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}};
 use http_reader::HttpReader;
 
 fn main() {
@@ -63,12 +63,12 @@ fn handle_connection(mut stream: TcpStream, show_debug: bool){
         http::Method::GET => {
             
             //let response = "HTTP/1.1 200 OK\r\n\r\n";
-            let body = format!("Not Implemented Yet");
+            let body = "Not Implemented Yet".to_string();
             let length = body.as_bytes().len();
             
             let response = format!("HTTP/1.1 501 Not Implemented\nContent-Length: {length}\r\n\r\n{body}");
             
-            stream.write_all(format!("{}",response).as_bytes()).unwrap();
+            stream.write_all(response.to_string().as_bytes()).unwrap();
         }
         _ =>{
             
