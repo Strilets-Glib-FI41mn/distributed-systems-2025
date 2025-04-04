@@ -80,8 +80,7 @@ fn handle_connection(mut stream: TcpStream, data: Arc<Mutex<HashMap<Uuid, String
                     stream.write_all(response.as_bytes()).unwrap();
                     }
                 }else{
-
-                    let response = "HTTP/1.1 401\r\n\r\n";
+                    let response = "HTTP/1.1 500 Internal Server Error\r\n\r\n";
                     stream.write_all(response.as_bytes()).unwrap();
                 }
                 
@@ -93,14 +92,12 @@ fn handle_connection(mut stream: TcpStream, data: Arc<Mutex<HashMap<Uuid, String
             }
         }
         http::Method::GET => {
-            
-            //let response = "HTTP/1.1 200 OK\r\n\r\n";
             let storage = data.lock().unwrap();
             let body: Vec<_> = storage.iter().map(|(_, msg)| msg.clone()).collect();
             let body = body.join(", ").to_string();
             let length = body.as_bytes().len();
             
-            let response = format!("HTTP/1.1 202 Ok\nContent-Length: {length}\n\n{body}");
+            let response = format!("HTTP/1.1 200 OK\nContent-Length: {length}\n\n{body}");
             
             stream.write_all(response.to_string().as_bytes()).unwrap();
         }

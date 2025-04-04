@@ -61,12 +61,10 @@ fn handle_connection(mut stream: TcpStream, show_debug: bool){
 
     match *request.method(){
         http::Method::GET => {
-            
-            //let response = "HTTP/1.1 200 OK\r\n\r\n";
             let body = "Not Implemented Yet".to_string();
             let length = body.as_bytes().len();
             
-            let response = format!("HTTP/1.1 501 Not Implemented\nContent-Length: {length}\r\n\r\n{body}");
+            let response = format!("HTTP/1.1 501 Not Implemented\nContent-Length: {length}\r\n\r\n{body}\r\n");
             
             stream.write_all(response.to_string().as_bytes()).unwrap();
         }

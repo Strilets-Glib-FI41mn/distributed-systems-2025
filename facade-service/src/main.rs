@@ -88,7 +88,7 @@ fn handle_connection(mut stream: TcpStream, logging_adress: &str, message_adress
 
     match *request.method(){
         http::Method::POST =>{
-            response = "HTTP/1.1 202\r\n\r\n";
+            response = "HTTP/1.1 500 Internal Server Error\r\n\r\n";
             if let Some(body) = request.body(){
                 let id = Uuid::new_v4();
                 let http_client = Client::new();
@@ -96,7 +96,6 @@ fn handle_connection(mut stream: TcpStream, logging_adress: &str, message_adress
                 .post(format!("{}/post", logging_adress))
                 .body(format!("{id}: {body}")).send();
                 if show_debug{println!("{:?}", http_result);}
-                //let http_client = ClientBuilder::new();
                 response = "HTTP/1.1 200 OK\r\n\r\n";
             }
 
@@ -117,7 +116,7 @@ fn handle_connection(mut stream: TcpStream, logging_adress: &str, message_adress
             
             if let (Ok(a), Ok(b)) = (http_result, http_result_message){
                 if let (Ok(text_1), Ok(text_2)) = (a.text(), b.text()){
-                    Some(format!("HTTP/1.1 202 Ok\r\n\r\n{}; {}", &text_1, &text_2))
+                    Some(format!("HTTP/1.1 200 OK\r\n\r\n{}; {}\r\n", &text_1, &text_2))
                 }else{
                     None
                 }
