@@ -1,92 +1,47 @@
-//use http::{request, HeaderName, HeaderValue, Request, Response, StatusCode, Version};
-//use serde;
-//use serde_json;
-
-
-//use std::{env, io::BufReader, net::{TcpListener, TcpStream}};
-/* */
 use std::{
-    env, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}
+    io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}
 };
 use http_reader::HttpReader;
 //use reqwest::blocking::{Request, RequestBuilder};
 use reqwest::blocking::Client;
 use uuid::Uuid;
-use rand::seq::IndexedRandom; // 0.9.1
+
+use clap::Parser;
+
+#[derive(Parser, Default,Debug)]
+struct Arguments {
+    #[arg(short, long)]
+    pub port : Option<i32>,
+    #[arg(long)]
+    pub server_config: String,
+    #[arg(long, short, action)]
+    pub debug: bool
+}
+
+
 fn main() {
-    let mut port = "7878".to_owned();
-    let mut logging_service_ports = vec!["9898".to_owned(), "9899".to_owned(), "9900".to_owned()];
+    let args = Arguments::parse();
+    let port = args.port.unwrap_or(7878);
+
     let message_service_port = "7325".to_owned();
-    let mut show_debug = false;
-    let args: Vec<_> = env::args().skip(1).collect();
-    for arg in &args{
-        let (key, value) = 
-        match arg.contains('=') {
-            true => {
-                let str_vec: Vec<&str> = arg.split('=').collect();
-                (String::from(str_vec[0]), Some(String::from(str_vec[1])))
-            },
-            false => {
-                (arg.to_owned(), None)
-            }
-        };
-        match key.as_str(){
-            "--port" | "-p" => {
-                if let Some(port_string) = &value{
-                    if let Ok(val) = port_string.parse::<i32>(){
-                        if val < 65535{
-                            port = port_string.clone();
-                        }
-                    }
-                }
-            }
-            "--logging_service_ports" => {
-                if let Some(ports) = &value{
-                    logging_service_ports = vec![];
-                    let ports:Vec<&str> =  ports.split(',').collect();
-                    for port in ports{
-                        if let Ok(val) = port.parse::<i32>(){
-                            if val < 65535{
-                                    logging_service_ports.push(port.to_owned());
-                                }
-                            }
-                        }
-                    }
-                }
-            "-d" | "--debug" =>{
-                show_debug = true;
-            }
-            _ => {
-                println!("Unknown argument {arg}");
-            }
-        }
-    }
-    if show_debug{
-        for argument in &args {
-            println!("{argument}");
-        }
+    
+    if args.debug{
         println!("using port {port}")
     }
-    for logging_service_port in &logging_service_ports{
-        if port == *logging_service_port{
-            panic!("facade port {} is equal to logging port {}",&port, &logging_service_port);
-        }
-    }
-    let logging_adressess:Vec<_> = logging_service_ports.into_iter().map(|x| format!( "http://127.0.0.1:{}", &x)).collect();
-    let address: String = "127.0.0.1:".to_owned() + &port;
-    //let logging_adress: String = "http://127.0.0.1:".to_owned() + &logging_service_port;
+    let address: String = format!("127.0.0.1:{}", &port);
+
     let message_adress: String = "http://127.0.0.1:".to_owned() + &message_service_port;
     let listener = TcpListener::bind(address).unwrap();
 
     
     for stream in listener.incoming() {
         let stream = stream.unwrap();
-        handle_connection(stream, &logging_adressess, &message_adress, show_debug);
+        handle_connection(stream, &args.server_config, &message_adress, args.debug);
         //handle_connection(stream)
     }
 }
 
-fn handle_connection(mut stream: TcpStream, logging_adresses: &Vec<String>, message_adress: &str, show_debug:bool){
+fn handle_connection(mut stream: TcpStream, server_config: &String, message_adress: &str, show_debug:bool){
     let mut buf_reader = BufReader::new(&stream);
     let mut line_consumer = HttpReader::new(&mut buf_reader);
     let request = line_consumer.make_request();
@@ -94,7 +49,40 @@ fn handle_connection(mut stream: TcpStream, logging_adresses: &Vec<String>, mess
     
     let mut response = "HTTP/1.1 401 Not Implemented\r\n\r\n".to_owned();
 
-    let adress = logging_adresses.choose(&mut rand::rng()).expect("Somehow the fasade service has no logging adresses");
+    let http_client = Client::new();
+
+    let adress = 
+    match request.method(){
+        &http::Method::POST | &http::Method::GET =>{
+            match http_client.get(server_config).send() {
+                Ok(address) => {
+                    match address.bytes(){
+                        Ok(adress) => {             
+                            match std::str::from_utf8(&adress){
+                                Ok(actuall_adress) => {Some(actuall_adress.to_owned())},
+                                Err(err) => {
+                                    println!("Error found while reading adress of logging service: {}", err);
+                                    return;
+                                },
+                            }
+                        },
+                        Err(err) =>{
+                            println!("Error found while reading adress of logging service: {}", err);
+                            return;
+                        }
+                    }
+                },
+                Err(err) => {
+                    println!("{}", err);
+                    return
+                }
+            }
+        }
+        _ =>{
+            None
+        }
+    };
+    
 
     match *request.method(){
         http::Method::POST =>{
@@ -102,9 +90,9 @@ fn handle_connection(mut stream: TcpStream, logging_adresses: &Vec<String>, mess
             if let Some(body) = request.body(){
                 
                 let id = Uuid::new_v4();
-                let http_client = Client::new();
+                
                 let http_result = http_client
-                .post(format!("{}/post", adress))
+                .post(format!("{}/post", adress.unwrap()))
                 .body(format!("{id}: {body}")).send();
                 if show_debug{println!("{:?}", http_result);}
                 match http_result{
@@ -124,7 +112,7 @@ fn handle_connection(mut stream: TcpStream, logging_adresses: &Vec<String>, mess
         http::Method::GET => {
             let http_client = Client::new();
             let http_result = http_client
-                .get(adress.to_string())
+                .get(adress.unwrap())
                 .send();
 
             
