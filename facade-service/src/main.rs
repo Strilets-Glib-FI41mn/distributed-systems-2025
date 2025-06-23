@@ -92,7 +92,7 @@ fn handle_connection(mut stream: TcpStream, logging_adresses: &Vec<String>, mess
     let request = line_consumer.make_request();
     if show_debug{println!("{:?}", request);}
     
-    let mut response = "HTTP/1.1 401 Not Implemented\r\n\r\n";
+    let mut response = "HTTP/1.1 401 Not Implemented\r\n\r\n".to_owned();
 
     let adress = match logging_adresses.choose(&mut rand::rng()) {
         Some(i) => Some(i),
@@ -101,7 +101,7 @@ fn handle_connection(mut stream: TcpStream, logging_adresses: &Vec<String>, mess
 
     match *request.method(){
         http::Method::POST =>{
-            response = "HTTP/1.1 500 Internal Server Error\r\n\r\n";
+            response = "HTTP/1.1 500 Internal Server Error\r\n\r\n".to_owned();
             if let Some(body) = request.body(){
                 
                 let id = Uuid::new_v4();
@@ -110,7 +110,16 @@ fn handle_connection(mut stream: TcpStream, logging_adresses: &Vec<String>, mess
                 .post(format!("{}/post", adress))
                 .body(format!("{id}: {body}")).send();
                 if show_debug{println!("{:?}", http_result);}
-                response = "HTTP/1.1 200 OK\r\n\r\n";
+                match http_result{
+                    Ok(resp) => {
+                        response = 
+                        match resp.text(){
+                            Ok(val) => val,
+                            Err(err) => err.to_string(),
+                        }
+                    },
+                    Err(err) => response = err.to_string(),
+                }
             }
 
             stream.write_all(response.as_bytes()).unwrap();

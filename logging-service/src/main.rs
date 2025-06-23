@@ -1,4 +1,4 @@
-use std::{collections::HashMap, env, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, str::FromStr, sync::{Arc, Mutex}};
+use std::{env, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, str::FromStr};
 
 use http_reader::HttpReader;
 
@@ -8,11 +8,11 @@ use std::process::Command;
 
 fn main() {
     //let mut port = "7878".to_owned();
-    let storage = Arc::new(Mutex::new(HashMap::new()));
+    //let storage = Arc::new(Mutex::new(HashMap::new()));
     let mut logging_service_port = "9898".to_owned();
     let mut hazelcast_port = "5701".to_owned();
     let mut show_debug = false;
-    let mut hazelcast_map = "map".to_owned();
+    let mut hazelcast_map = "test".to_owned();
     let mut hazelcast_ip = "127.0.0.1".to_owned();
     let mut listening_ip = "127.0.0.1".to_owned();
     let mut cluster_name = "lab".to_owned();
@@ -87,12 +87,12 @@ fn main() {
     
     for stream in listener.incoming() {
         let stream = stream.unwrap();
-        handle_connection(stream, storage.clone(), show_debug, hazelcast_ip.to_owned(), hazelcast_port.clone(), &hazelcast_map, &cluster_name);
+        handle_connection(stream, show_debug, hazelcast_ip.to_owned(), hazelcast_port.clone(), &hazelcast_map, &cluster_name);
         //handle_connection(stream)
     }
 }
 
-fn handle_connection(mut stream: TcpStream, data: Arc<Mutex<HashMap<Uuid, String>>>, show_debug: bool, hazelcast_ip: String, hazelcast_port: String, hazelcast_map: &str, cluster_name: &str){
+fn handle_connection(mut stream: TcpStream, show_debug: bool, hazelcast_ip: String, hazelcast_port: String, hazelcast_map: &str, cluster_name: &str){
     let mut buf_reader = BufReader::new(&stream);
     let mut line_consumer = HttpReader::new(&mut buf_reader);
     let request = line_consumer.make_request();
@@ -107,25 +107,32 @@ fn handle_connection(mut stream: TcpStream, data: Arc<Mutex<HashMap<Uuid, String
                 if values.len() == 2{
                     if let Ok(val) =  Uuid::from_str(values[0]){
                         
-                        println!("Got POST request with data: '{:#?}'", &values);
-                        let mut storage = data.lock().unwrap();
-                        storage.insert(val.clone(), values[1].to_owned().clone());
+                        //let mut storage = data.lock().unwrap();
+                        //storage.insert(val.clone(), values[1].to_owned().clone());
                         
                         if show_debug {
                             println!("key for the hazelcast: {} hazelcast value: {}", &val, &values[1]);
-                        }
-                        if show_debug {
                             println!("IP: {} port: {}", &hazelcast_ip, &hazelcast_port);
                         }
                         let client = HazelcastRestClient::new(&hazelcast_ip, &hazelcast_port);
-                        let res = client.map_put::<String>(hazelcast_map,&Into::<String>::into(val), values[1].to_owned());
+                        use serde_json::json;
+
+                        let json_data = json!({ "value": values[1] , "factoryId" : -1, "contentType": "json"});
+                        let res = client.map_put(hazelcast_map,&Into::<String>::into(val), json_data);
                         if show_debug {
                             println!("{res:?}");
                         }
 
-
-                    let response = "HTTP/1.1 201 Created\r\n\r\n";
-                    stream.write_all(response.as_bytes()).unwrap();
+                        match res{
+                            Ok(response) => {
+                                //let response = "HTTP/1.1 201 Created\r\n\r\n";
+                                stream.write_all(response.as_bytes()).unwrap();
+                            },
+                            Err(_) => {
+                                let response = "HTTP/1.1 500 Internal Server Error\r\n\r\n";
+                                stream.write_all(response.as_bytes()).unwrap();
+                            },
+                        }
                     }
                 }else{
                     let response = "HTTP/1.1 500 Internal Server Error\r\n\r\n";
@@ -140,19 +147,18 @@ fn handle_connection(mut stream: TcpStream, data: Arc<Mutex<HashMap<Uuid, String
             }
         }
         http::Method::GET => {
-            let storage = data.lock().unwrap();
-            let body: Vec<_> = storage.iter().map(|(_, msg)| msg.clone()).collect();
-            let body = body.join(", ").to_string();
-            let length = body.as_bytes().len();
-
             let path = format!("{}:{}",&hazelcast_ip,  &hazelcast_port);
 
-            let output = Command::new("conda activate distributed \n python3 get_data.py")
-                    .arg(format!("--ip {}, --cluster_name {}, --map_name {}", path, cluster_name, hazelcast_map))
-                    .output();
-            //let output = Command::new("ls").output();
+
+
+            let output = Command::new(format!("zsh {:?}/run_get_data.sh", env::current_dir().unwrap()))
+            .arg(format!(" --ip {}, --cluster_name {}, --map_name {}", path, cluster_name, hazelcast_map))
+            .output();
             if show_debug{
-                println!("{:?}", output);
+
+                let path = env::current_dir().unwrap();
+                println!("The current directory is {}", path.display());
+                println!("Output of runnig the script is: {:?}", output);
             }
             if let Ok(output) = output{
                 match core::str::from_utf8(&output.stdout){
@@ -170,9 +176,6 @@ fn handle_connection(mut stream: TcpStream, data: Arc<Mutex<HashMap<Uuid, String
                     }
                 }
             }
-            let response = format!("HTTP/1.1 200 OK\nContent-Length: {length}\n\n{body}");
-            
-            stream.write_all(response.to_string().as_bytes()).unwrap();
         }
         _ =>{
             
