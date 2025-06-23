@@ -105,7 +105,7 @@ fn handle_connection(mut stream: TcpStream, show_debug: bool, hazelcast_ip: Stri
             
                 let values: Vec<&str> = body.split(": ").take(2).collect();
                 if values.len() == 2{
-                    if let Ok(_) =  Uuid::from_str(values[0]){
+                    if Uuid::from_str(values[0]).is_ok(){
                         
                         //let mut storage = data.lock().unwrap();
                         //storage.insert(val.clone(), values[1].to_owned().clone());
@@ -150,7 +150,7 @@ fn handle_connection(mut stream: TcpStream, show_debug: bool, hazelcast_ip: Stri
             let path = format!("{}:{}",&hazelcast_ip,  &hazelcast_port);
             let output = Command::new("zsh")
 
-            .args(["run_get_data.sh".into(), "--ip", &path, "--cluster_name", &cluster_name, "--map_name", &hazelcast_map])
+            .args(["run_get_data.sh", "--ip", &path, "--cluster_name", cluster_name, "--map_name", hazelcast_map])
             .output();
             if show_debug{
 

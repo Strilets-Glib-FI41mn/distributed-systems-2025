@@ -1,7 +1,6 @@
-use toml;
-use std::{fs, path::Path};
+use std::fs;
 use clap::Parser;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use std::{
     io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}
@@ -64,10 +63,7 @@ fn handle_connection(mut stream: TcpStream, logging_adresses: &Vec<String>, show
     
     let mut response = "HTTP/1.1 401 Not Implemented\r\n\r\n".to_owned();
 
-    let adress = match logging_adresses.choose(&mut rand::rng()) {
-        Some(i) => Some(i),
-        None    => None
-    }.expect("Somehow the config service has no logging adresses");
+    let adress = logging_adresses.choose(&mut rand::rng()).expect("Somehow the config service has no logging adresses");
 
     match *request.method(){
         http::Method::GET => {
