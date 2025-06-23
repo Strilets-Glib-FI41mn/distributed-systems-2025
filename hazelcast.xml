@@ -406,6 +406,7 @@
         The version of the portable serialization. Portable version is used to differentiate two same
         classes that have changes on it like adding/removing field or changing a type of a field.
     -->
+
     <serialization>
         <portable-version>0</portable-version>
     </serialization>

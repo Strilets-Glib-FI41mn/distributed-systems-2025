@@ -111,14 +111,14 @@ fn handle_connection(mut stream: TcpStream, show_debug: bool, hazelcast_ip: Stri
                         //storage.insert(val.clone(), values[1].to_owned().clone());
                         
                         if show_debug {
-                            println!("key for the hazelcast: {} hazelcast value: {}", &val, &values[1]);
+                            println!("key for the hazelcast: {} hazelcast value: {}", &values[0], &values[1]);
                             println!("IP: {} port: {}", &hazelcast_ip, &hazelcast_port);
                         }
                         let client = HazelcastRestClient::new(&hazelcast_ip, &hazelcast_port);
-                        use serde_json::json;
+                        //use serde_json::json;
 
-                        let json_data = json!({ "value": values[1] , "factoryId" : -1, "contentType": "json"});
-                        let res = client.map_put(hazelcast_map,&Into::<String>::into(val), json_data);
+                        //let json_data = json!({ "value": values[1]});
+                        let res = client.map_put(hazelcast_map,&Into::<String>::into(values[0]), &vec![("Content-Type", "plain/text"), ("factoryId", "-1")], values[1]);
                         if show_debug {
                             println!("{res:?}");
                         }

@@ -1,7 +1,6 @@
 
 import hazelcast
 
-
 import argparse
 # Defining main function
 def main():
@@ -37,7 +36,7 @@ def main():
 
         
         print("Values in the map:")
-        for val in my_map.values()():
+        for val in my_map.values():
             print(f"Key: {val}")
 
 
