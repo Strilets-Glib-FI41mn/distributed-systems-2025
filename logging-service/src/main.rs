@@ -4,6 +4,7 @@ use http_reader::HttpReader;
 
 use uuid::Uuid;
 use hazelcast_rest::HazelcastRestClient;
+use std::process::Command;
 
 fn main() {
     //let mut port = "7878".to_owned();
@@ -12,6 +13,9 @@ fn main() {
     let mut hazelcast_port = "5701".to_owned();
     let mut show_debug = false;
     let mut hazelcast_map = "map".to_owned();
+    let mut hazelcast_ip = "127.0.0.1".to_owned();
+    let mut listening_ip = "127.0.0.1".to_owned();
+    let mut cluster_name = "lab".to_owned();
     let args: Vec<_> = env::args().skip(1).collect();
     for arg in &args{
         let (key, value) = 
@@ -47,6 +51,21 @@ fn main() {
                     hazelcast_map = val.into();
                 }
             }
+            "--hazelcast_ip" => {
+                if let Some(val) = &value{
+                    hazelcast_ip = val.clone();
+                }
+            }
+            "--listening_ip" =>{
+                if let Some(val) = &value{
+                    listening_ip = val.clone();
+                }
+            }
+            "--cluster_name" =>{
+                if let Some(val) = &value{
+                    cluster_name = val.clone();
+                }
+            }
             "-d" | "--debug" =>{
                 show_debug = true;
             }
@@ -61,20 +80,19 @@ fn main() {
         }
         println!("using port {logging_service_port}");
     }
-    let ip_address = "127.0.0.1:";
-    let logging_adress: String = ip_address.to_owned() + &logging_service_port;
-    //let hazelcast_adress: String = ip_address.to_owned() + &hazelcast_port;
+    let logging_adress: String = format!("{}:{}", listening_ip.clone(), &logging_service_port); // hazelcast_ip.to_owned() + &logging_service_port;
+    //let hazelcast_adress: String = hazelcast_ip.to_owned() + &hazelcast_port;
     let listener = TcpListener::bind(logging_adress).unwrap();
     //let hazelcast_port = Arc::<String>::new(hazelcast_port);
     
     for stream in listener.incoming() {
         let stream = stream.unwrap();
-        handle_connection(stream, storage.clone(), show_debug, ip_address.to_owned(), hazelcast_port.clone(), &hazelcast_map);
+        handle_connection(stream, storage.clone(), show_debug, hazelcast_ip.to_owned(), hazelcast_port.clone(), &hazelcast_map, &cluster_name);
         //handle_connection(stream)
     }
 }
 
-fn handle_connection(mut stream: TcpStream, data: Arc<Mutex<HashMap<Uuid, String>>>, show_debug: bool, ip_address: String, hazelcast_port: String, hazelcast_map: &str){
+fn handle_connection(mut stream: TcpStream, data: Arc<Mutex<HashMap<Uuid, String>>>, show_debug: bool, hazelcast_ip: String, hazelcast_port: String, hazelcast_map: &str, cluster_name: &str){
     let mut buf_reader = BufReader::new(&stream);
     let mut line_consumer = HttpReader::new(&mut buf_reader);
     let request = line_consumer.make_request();
@@ -93,9 +111,18 @@ fn handle_connection(mut stream: TcpStream, data: Arc<Mutex<HashMap<Uuid, String
                         let mut storage = data.lock().unwrap();
                         storage.insert(val.clone(), values[1].to_owned().clone());
                         
-                        let client = HazelcastRestClient::new(&ip_address, &hazelcast_port);
+                        if show_debug {
+                            println!("key for the hazelcast: {} hazelcast value: {}", &val, &values[1]);
+                        }
+                        if show_debug {
+                            println!("IP: {} port: {}", &hazelcast_ip, &hazelcast_port);
+                        }
+                        let client = HazelcastRestClient::new(&hazelcast_ip, &hazelcast_port);
                         let res = client.map_put::<String>(hazelcast_map,&Into::<String>::into(val), values[1].to_owned());
-                        println!("{res:?}");
+                        if show_debug {
+                            println!("{res:?}");
+                        }
+
 
                     let response = "HTTP/1.1 201 Created\r\n\r\n";
                     stream.write_all(response.as_bytes()).unwrap();
@@ -107,7 +134,7 @@ fn handle_connection(mut stream: TcpStream, data: Arc<Mutex<HashMap<Uuid, String
                 
                 //let http_client = ClientBuilder::new();
             }else{
-
+                
                 let response = "HTTP/1.1 401\r\n\r\n";
                 stream.write_all(response.as_bytes()).unwrap();
             }
@@ -117,7 +144,32 @@ fn handle_connection(mut stream: TcpStream, data: Arc<Mutex<HashMap<Uuid, String
             let body: Vec<_> = storage.iter().map(|(_, msg)| msg.clone()).collect();
             let body = body.join(", ").to_string();
             let length = body.as_bytes().len();
-            
+
+            let path = format!("{}:{}",&hazelcast_ip,  &hazelcast_port);
+
+            let output = Command::new("conda activate distributed \n python3 get_data.py")
+                    .arg(format!("--ip {}, --cluster_name {}, --map_name {}", path, cluster_name, hazelcast_map))
+                    .output();
+            //let output = Command::new("ls").output();
+            if show_debug{
+                println!("{:?}", output);
+            }
+            if let Ok(output) = output{
+                match core::str::from_utf8(&output.stdout){
+                    Ok(output) =>{
+
+                        let response = format!("HTTP/1.1 200 OK\nContent-Length: {}\n\n{}", output.as_bytes().len(), output);
+                        
+                        stream.write_all(response.to_string().as_bytes()).unwrap();
+                        //println!("{}",output);
+                    }
+                    Err(er) =>{
+                        //println!("Encoding error: {:?}", er);
+                        let response = format!("HTTP/1.1 500 Internal Server Error\nContent-Length: {}\n\n{}", &er.to_string().as_bytes().len(), &er.to_string());
+                        stream.write_all(response.as_bytes()).unwrap();
+                    }
+                }
+            }
             let response = format!("HTTP/1.1 200 OK\nContent-Length: {length}\n\n{body}");
             
             stream.write_all(response.to_string().as_bytes()).unwrap();
