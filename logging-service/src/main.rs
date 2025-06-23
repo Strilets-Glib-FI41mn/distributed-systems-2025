@@ -105,7 +105,7 @@ fn handle_connection(mut stream: TcpStream, show_debug: bool, hazelcast_ip: Stri
             
                 let values: Vec<&str> = body.split(": ").take(2).collect();
                 if values.len() == 2{
-                    if let Ok(val) =  Uuid::from_str(values[0]){
+                    if let Ok(_) =  Uuid::from_str(values[0]){
                         
                         //let mut storage = data.lock().unwrap();
                         //storage.insert(val.clone(), values[1].to_owned().clone());
@@ -148,29 +148,24 @@ fn handle_connection(mut stream: TcpStream, show_debug: bool, hazelcast_ip: Stri
         }
         http::Method::GET => {
             let path = format!("{}:{}",&hazelcast_ip,  &hazelcast_port);
+            let output = Command::new("zsh")
 
-
-
-            let output = Command::new(format!("zsh {:?}/run_get_data.sh", env::current_dir().unwrap()))
-            .arg(format!(" --ip {}, --cluster_name {}, --map_name {}", path, cluster_name, hazelcast_map))
+            .args(["run_get_data.sh".into(), "--ip", &path, "--cluster_name", &cluster_name, "--map_name", &hazelcast_map])
             .output();
             if show_debug{
 
                 let path = env::current_dir().unwrap();
                 println!("The current directory is {}", path.display());
                 println!("Output of runnig the script is: {:?}", output);
+                println!("{}", core::str::from_utf8(&Command::new("ls").arg("run_get_data.sh").output().unwrap().stdout).unwrap());
             }
             if let Ok(output) = output{
                 match core::str::from_utf8(&output.stdout){
                     Ok(output) =>{
-
                         let response = format!("HTTP/1.1 200 OK\nContent-Length: {}\n\n{}", output.as_bytes().len(), output);
-                        
                         stream.write_all(response.to_string().as_bytes()).unwrap();
-                        //println!("{}",output);
                     }
                     Err(er) =>{
-                        //println!("Encoding error: {:?}", er);
                         let response = format!("HTTP/1.1 500 Internal Server Error\nContent-Length: {}\n\n{}", &er.to_string().as_bytes().len(), &er.to_string());
                         stream.write_all(response.as_bytes()).unwrap();
                     }
