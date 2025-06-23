@@ -1,54 +1,31 @@
-use std::{env, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}};
+use std::{io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}};
 use http_reader::HttpReader;
+use clap::Parser;
+#[derive(Parser,Default,Debug)]
+struct Arguments {
+    #[arg(short = 'p', long = "port", value_name = "PORT of messages service")]
+    pub port : i32,
+    #[arg(value_name = "IP of messages service")]
+    pub ip: Option<String>,
+    #[arg(long, short = 'd', action)]
+    pub debug: bool,
+}
+
 
 fn main() {
-    //let mut port = "7878".to_owned();
-    let mut message_service_port = "7325".to_owned();
-    let mut show_debug = false;
-    let args: Vec<_> = env::args().skip(1).collect();
-    for arg in &args{
-        let (key, value) = 
-        match arg.contains('=') {
-            true => {
-                let str_vec: Vec<&str> = arg.split('=').collect();
-                (String::from(str_vec[0]), Some(String::from(str_vec[1])))
-            },
-            false => {
-                (arg.to_owned(), None)
-            }
-        };
-        match key.as_str(){
-            "--port" | "-p" | "--message_service_port" => {
-                if let Some(port_string) = &value{
-                    if let Ok(val) = port_string.parse::<i32>(){
-                        if val < 65535{
-                            message_service_port = port_string.clone();
-                        }
-                    }
-                }
-            }
-            "-d" | "--debug" =>{
-                show_debug = true;
-            }
-            _ => {
-                println!("Unknown argument {arg}");
-            }
-        }
+    let args = Arguments::parse();
+    let message_service_port = args.port;
+    let message_service_ip = args.ip.as_ref().map_or("127.0.0.1", |v| v);
+    if args.debug{
+        println!("{:?}",&args)
     }
-    if show_debug{
-        for argument in &args {
-            println!("{argument}");
-        }
-        println!("using port {message_service_port}");
-    }
-    let message_adress: String = "127.0.0.1:".to_owned() + &message_service_port;
+    let message_adress: String = format!("{}:{}", message_service_ip, message_service_port);
     let listener = TcpListener::bind(message_adress).unwrap();
 
     
     for stream in listener.incoming() {
         let stream = stream.unwrap();
-        handle_connection(stream, show_debug);
-        //handle_connection(stream)
+        handle_connection(stream, args.debug);
     }
 }
 

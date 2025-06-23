@@ -10,11 +10,13 @@ use clap::Parser;
 
 #[derive(Parser, Default,Debug)]
 struct Arguments {
-    #[arg(short, long)]
+    #[arg(short = 'p', long)]
     pub port : Option<i32>,
     #[arg(long)]
     pub server_config: String,
-    #[arg(long, short, action)]
+    #[arg(long)]
+    pub mesage_service: String,
+    #[arg(long, short = 'd', action)]
     pub debug: bool
 }
 
@@ -22,22 +24,16 @@ struct Arguments {
 fn main() {
     let args = Arguments::parse();
     let port = args.port.unwrap_or(7878);
-
-    let message_service_port = "7325".to_owned();
-    
     if args.debug{
         println!("using port {port}")
     }
     let address: String = format!("127.0.0.1:{}", &port);
-
-    let message_adress: String = "http://127.0.0.1:".to_owned() + &message_service_port;
     let listener = TcpListener::bind(address).unwrap();
 
     
     for stream in listener.incoming() {
         let stream = stream.unwrap();
-        handle_connection(stream, &args.server_config, &message_adress, args.debug);
-        //handle_connection(stream)
+        handle_connection(stream, &args.server_config, &args.mesage_service, args.debug);
     }
 }
 

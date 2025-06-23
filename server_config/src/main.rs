@@ -1,5 +1,4 @@
 use std::fs;
-use clap::Parser;
 use serde::Deserialize;
 
 use std::{
@@ -9,14 +8,16 @@ use http_reader::HttpReader;
 use rand::seq::IndexedRandom; // 0.9.1
 
 
+use clap::Parser;
 #[derive(Parser,Default,Debug)]
 struct Arguments {
+    #[arg(short = 'p', long = "path")]
     pub port : i32,
-    #[arg(group = "source", long)]
+    #[arg(group = "source", long = "path")]
     pub filepath: Option<String>,
     #[arg(group = "source", long, value_delimiter = ' ', num_args = 1..)]
     pub list: Option<Vec<String>>,
-    #[arg(long, short, action)]
+    #[arg(long, short = 'd', action)]
     pub debug: bool
 }
 #[derive(Deserialize)]
