@@ -87,7 +87,7 @@ fn handle_connection(mut stream: TcpStream, server_config: &String, debug:bool){
         http::Method::GET => {
             let http_client = Client::new();
             let http_result_logging = http_client
-                .get(format!("{}/get", logging_adress.unwrap()))
+                .get(format!("http://{}/get", logging_adress.unwrap()))
                 .send();
 
             
@@ -101,6 +101,10 @@ fn handle_connection(mut stream: TcpStream, server_config: &String, debug:bool){
                 .get(format!("http://{}/get",message_adress.unwrap().to_string()))
                 //.get(format!("{}/get",message_adress.to_string()))
                 .send();
+            if debug{
+                println!("http_result_logging {:?}", &http_result_logging);
+                println!("http_result_message {:?}", &http_result_message);
+            }
             let response = 
             
             match (http_result_logging, http_result_message){

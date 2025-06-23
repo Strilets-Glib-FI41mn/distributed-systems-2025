@@ -33,10 +33,6 @@ fn main() {
     let hazelcast_ip = args.hazelcast_ip.as_ref().map_or("127.0.0.1", |v| v);
     let listening_ip = args.ip.as_ref().map_or("127.0.0.1", |v| v);
     
-    if args.debug{
-        println!("{:?}", &args);
-        println!("using port {}", &args.port);
-    }
     let logging_adress: String = format!("{}:{}", listening_ip, &args.port); 
     let listener = TcpListener::bind(logging_adress).unwrap();
     
@@ -61,10 +57,6 @@ fn handle_connection(mut stream: TcpStream, show_debug: bool, hazelcast_ip: Stri
                 if values.len() == 2{
                     if Uuid::from_str(values[0]).is_ok(){
                         
-                        if show_debug {
-                            println!("key for the hazelcast: {} hazelcast value: {}", &values[0], &values[1]);
-                            println!("IP: {} port: {}", &hazelcast_ip, &hazelcast_port);
-                        }
                         let client = HazelcastRestClient::new(&hazelcast_ip, &hazelcast_port);
 
                         let res = client.map_put(hazelcast_map,&Into::<String>::into(values[0]), &vec![("Content-Type", "plain/text"), ("factoryId", "-1")], values[1]);
@@ -99,7 +91,6 @@ fn handle_connection(mut stream: TcpStream, show_debug: bool, hazelcast_ip: Stri
             .args(["run_get_data.sh", "--ip", &path, "--cluster_name", cluster_name, "--map_name", hazelcast_map])
             .output();
             if show_debug{
-
                 let path = env::current_dir().unwrap();
                 println!("The current directory is {}", path.display());
                 println!("Output of runnig the script is: {:?}", output);
