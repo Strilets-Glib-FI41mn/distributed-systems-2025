@@ -11,26 +11,35 @@ use rand::seq::IndexedRandom; // 0.9.1
 use clap::Parser;
 #[derive(Parser,Default,Debug)]
 struct Arguments {
-    #[arg(short = 'p', long = "path")]
+    #[arg(short = 'p', long)]
     pub port : i32,
-    #[arg(group = "source", long = "path")]
+    #[arg(short = 'f', long, value_name = "Filepath of a tolm file which includes an array of logging addresses and a single message adress")]
     pub filepath: Option<String>,
-    #[arg(group = "source", long, value_delimiter = ' ', num_args = 1..)]
-    pub list: Option<Vec<String>>,
+    #[arg(long, value_delimiter = ' ', num_args = 1..)]
+    pub logging_list: Option<Vec<String>>,
+    #[arg(long)]
+    pub message: Option<String>,
     #[arg(long, short = 'd', action)]
     pub debug: bool
 }
 #[derive(Deserialize)]
-struct Config{pub adresses: Vec<String>}
+struct Config{pub logging_adresses: Vec<String>, pub message: String}
 fn main() {
     let args = Arguments::parse();
-    print!("{:?}", args);
+    if args.debug{ print!("{:?}", args); }
+    if args.filepath.is_some() && (args.logging_list.is_some() || args.message.is_some()){
+            panic!("Filepath forbids usage of logging-list and message arguments because it reads both from a file");
+    }
+
+    if args.filepath.is_none() && (args.logging_list.is_none() || args.message.is_none()){
+        panic!("Either provide --filepath -f with the tolm file or provide both --logging-list and --message");
+}
     //return;
     
     let config =
-    match args.list{
-        Some(logging) => Config{adresses: logging},
-        None => {
+    match (args.logging_list, args.message){
+        (Some(logging_adresses),Some(message)) => Config{logging_adresses, message},
+        (None, None) => {
             match args.filepath{
                 Some(path) => {
                     let contents = fs::read_to_string(&path)
@@ -41,10 +50,14 @@ fn main() {
                 None => panic!("No IPs for logging service were provided!"),
             }
         },
+        _ =>{
+            panic!("Violation of group rules of Arguments Parser");
+        }
+        
     };
 
     let port = args.port;
-    let show_debug = args.debug;
+    let debug = args.debug;
     
     let config_adress: String = format!("127.0.0.1:{}", &port);
     let listener = TcpListener::bind(config_adress).unwrap();
@@ -52,26 +65,46 @@ fn main() {
     
     for stream in listener.incoming() {
         let stream = stream.unwrap();
-        handle_connection(stream,  &config.adresses, show_debug);
+        handle_connection(stream,  &config.logging_adresses, &config.message, debug);
     }
 }
 
-fn handle_connection(mut stream: TcpStream, logging_adresses: &Vec<String>, show_debug:bool){
+fn handle_connection(mut stream: TcpStream, logging_adresses: &Vec<String>, message: &String, debug:bool){
     let mut buf_reader = BufReader::new(&stream);
     let mut line_consumer = HttpReader::new(&mut buf_reader);
     let request = line_consumer.make_request();
-    if show_debug{println!("{:?}", request);}
+    if debug{println!("{:?}", request);}
     
-    let mut response = "HTTP/1.1 401 Not Implemented\r\n\r\n".to_owned();
-
-    let adress = logging_adresses.choose(&mut rand::rng()).expect("Somehow the config service has no logging adresses");
-
+    let response;
     match *request.method(){
         http::Method::GET => {
-            response = format!("HTTP/1.1 200 OK\nContent-Type: plain/text\nContent-Length: {}\n\n{}", adress.as_bytes().len(), adress);
+            let collected: Vec<&str> = request.uri().path().split("/").collect();
+            let target = collected.get(2);
+            if debug{
+                println!("{:?}",target);
+            }
+            if target.is_none(){
+                response =  "HTTP/1.1 400 Bad Request\r\n\r\n".to_owned();
+                stream.write_all(response.as_bytes()).unwrap();
+                return;
+            }
+            let target = *(target.unwrap());
+            match target{
+                "logging" => {
+                    let adress = logging_adresses.choose(&mut rand::rng()).expect("Somehow the config service has no logging adresses");
+                    response = format!("HTTP/1.1 200 OK\nContent-Type: plain/text\nContent-Length: {}\n\n{}", adress.as_bytes().len(), adress);
+                }
+                "message" => {
+                    response = format!("HTTP/1.1 200 OK\nContent-Type: plain/text\nContent-Length: {}\n\n{}", message.as_bytes().len(), message);
+                }
+                _ =>{
+                    response =  "HTTP/1.1 400 Bad Request\r\n\r\n".to_owned();
+                }
+            }
             let _ = stream.write_all(response.as_bytes());
         }
         _ =>{
+            response = "HTTP/1.1 401 Not Implemented\r\n\r\n".to_owned();
             stream.write_all(response.as_bytes()).unwrap();
         }
     }

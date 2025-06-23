@@ -103,13 +103,12 @@ fn handle_connection(mut stream: TcpStream, show_debug: bool, hazelcast_ip: Stri
                 let path = env::current_dir().unwrap();
                 println!("The current directory is {}", path.display());
                 println!("Output of runnig the script is: {:?}", output);
-                println!("{}", core::str::from_utf8(&Command::new("ls").arg("run_get_data.sh").output().unwrap().stdout).unwrap());
             }
             if let Ok(output) = output{
                 match core::str::from_utf8(&output.stdout){
                     Ok(output) =>{
                         let response = format!("HTTP/1.1 200 OK\nContent-Length: {}\n\n{}", output.as_bytes().len(), output);
-                        stream.write_all(response.to_string().as_bytes()).unwrap();
+                        stream.write_all(response.as_bytes()).unwrap();
                     }
                     Err(er) =>{
                         let response = format!("HTTP/1.1 500 Internal Server Error\nContent-Length: {}\n\n{}", &er.to_string().as_bytes().len(), &er.to_string());

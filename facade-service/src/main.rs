@@ -14,8 +14,8 @@ struct Arguments {
     pub port : Option<i32>,
     #[arg(long)]
     pub server_config: String,
-    #[arg(long)]
-    pub mesage_service: String,
+    //#[arg(long)]
+    //pub mesage_service: String,
     #[arg(long, short = 'd', action)]
     pub debug: bool
 }
@@ -27,59 +27,38 @@ fn main() {
     if args.debug{
         println!("using port {port}")
     }
-    let address: String = format!("127.0.0.1:{}", &port);
-    let listener = TcpListener::bind(address).unwrap();
+    let facade_address: String = format!("127.0.0.1:{}", &port);
+    let listener = TcpListener::bind(facade_address).unwrap();
 
     
     for stream in listener.incoming() {
         let stream = stream.unwrap();
-        handle_connection(stream, &args.server_config, &args.mesage_service, args.debug);
+        handle_connection(stream, &args.server_config,  args.debug);
     }
 }
 
-fn handle_connection(mut stream: TcpStream, server_config: &String, message_adress: &str, show_debug:bool){
+fn handle_connection(mut stream: TcpStream, server_config: &String, debug:bool){
     let mut buf_reader = BufReader::new(&stream);
     let mut line_consumer = HttpReader::new(&mut buf_reader);
     let request = line_consumer.make_request();
-    if show_debug{println!("{:?}", request);}
+    if debug{println!("{:?}", request);}
     
     let mut response = "HTTP/1.1 401 Not Implemented\r\n\r\n".to_owned();
 
     let http_client = Client::new();
 
-    let adress = 
+    let logging_adress = 
     match request.method(){
         &http::Method::POST | &http::Method::GET =>{
-            match http_client.get(server_config).send() {
-                Ok(address) => {
-                    match address.bytes(){
-                        Ok(adress) => {             
-                            match std::str::from_utf8(&adress){
-                                Ok(actuall_adress) => {Some(actuall_adress.to_owned())},
-                                Err(err) => {
-                                    println!("Error found while reading adress of logging service: {}", err);
-                                    return;
-                                },
-                            }
-                        },
-                        Err(err) =>{
-                            println!("Error found while reading adress of logging service: {}", err);
-                            return;
-                        }
-                    }
-                },
-                Err(err) => {
-                    println!("{}", err);
-                    return
-                }
+            match get_data_from_config(&server_config, "logging", debug){
+                Some(ok) => Some(ok),
+                None => return,
             }
         }
         _ =>{
             None
         }
     };
-    
-
     match *request.method(){
         http::Method::POST =>{
             response = "HTTP/1.1 500 Internal Server Error\r\n\r\n".to_owned();
@@ -88,9 +67,9 @@ fn handle_connection(mut stream: TcpStream, server_config: &String, message_adre
                 let id = Uuid::new_v4();
                 
                 let http_result = http_client
-                .post(format!("{}/post", adress.unwrap()))
+                .post(format!("{}/post", logging_adress.unwrap()))
                 .body(format!("{id}: {body}")).send();
-                if show_debug{println!("{:?}", http_result);}
+                if debug{println!("{:?}", http_result);}
                 match http_result{
                     Ok(resp) => {
                         response = 
@@ -107,25 +86,50 @@ fn handle_connection(mut stream: TcpStream, server_config: &String, message_adre
         }
         http::Method::GET => {
             let http_client = Client::new();
-            let http_result = http_client
-                .get(adress.unwrap())
+            let http_result_logging = http_client
+                .get(format!("{}/get", logging_adress.unwrap()))
                 .send();
 
             
             let http_client = Client::new();
+            let message_adress =  get_data_from_config(&server_config, "message", debug);
+            if message_adress.is_none(){
+                stream.write_all("HTTP/1.1 500 Internal Server Error\r\n\r\n".to_owned().as_bytes()).unwrap();
+                return;
+            }
             let http_result_message = http_client
-                .get(message_adress.to_string())
+                .get(format!("http://{}/get",message_adress.unwrap().to_string()))
+                //.get(format!("{}/get",message_adress.to_string()))
                 .send();
             let response = 
             
-            if let (Ok(a), Ok(b)) = (http_result, http_result_message){
-                if let (Ok(text_1), Ok(text_2)) = (a.text(), b.text()){
-                    Some(format!("HTTP/1.1 200 OK\r\n\r\n{}; {}\r\n", &text_1, &text_2))
-                }else{
+            match (http_result_logging, http_result_message){
+                (Ok(l), Ok(m)) => {
+                    if debug{
+                        println!("Responses:\n{:?} {:?}\r\n", &l, &m)
+                    }
+                    if let (Ok(text_1), Ok(text_2)) = (l.text(), m.text()){
+                        if debug{
+                            println!("{} {}\r\n", &text_1, &text_2)
+                        }
+                        Some(format!("{} {}\r\n", &text_1, &text_2))
+                    }else{
+                        None
+                    }
+                },
+                (Ok(_), Err(message_error)) => {
+                    println!("Message error: {}", message_error);
                     None
-                }
-            }else{
-                None
+                },
+                (Err(logging_error), Ok(_)) => {
+                    println!("Logging error: {}", logging_error);
+                    None
+                },
+                (Err(message_error), Err(logging_error)) => {
+                    println!("Message error: {}", message_error);
+                    println!("Logging error: {}", logging_error);
+                    None
+                },
             };
             stream.write_all(response.unwrap_or("HTTP/1.1 500 Internal Server Error\r\n\r\n".to_owned()).as_bytes()).unwrap();
             
@@ -136,4 +140,35 @@ fn handle_connection(mut stream: TcpStream, server_config: &String, message_adre
     }
 
     
+}
+
+
+fn get_data_from_config(server_config: &str, name: &str, debug: bool) -> Option<String>{
+    let http_client = Client::new();
+    match http_client.get(format!("http://{}/get/{}",server_config, name)).send() {
+        Ok(address) => {
+            if debug{
+                println!("{:#?}", &address);
+            }
+            match address.bytes(){
+                Ok(adress) => {             
+                    match std::str::from_utf8(&adress){
+                        Ok(actuall_adress) => {println!("address???? {}", actuall_adress); Some(format!("{}",actuall_adress.to_owned()))},
+                        Err(err) => {
+                            println!("Error found while converting adress of {} service to UTF-8: {}", name, err);
+                            return None;
+                        },
+                    }
+                },
+                Err(err) =>{
+                    println!("Error found while reading adress of {} service: {}", name, err);
+                    return None;
+                }
+            }
+        },
+        Err(err) => {
+            println!("Response error: {}", err);
+            return None;
+        }
+    }
 }
