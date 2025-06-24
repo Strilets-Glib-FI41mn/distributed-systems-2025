@@ -38,7 +38,7 @@ fn handle_connection(mut stream: TcpStream, show_debug: bool){
 
     match *request.method(){
         http::Method::GET => {
-            let response = format!("HTTP/1.1 501 Not Implemented\r\n\r\n");
+            let response = "HTTP/1.1 501 Not Implemented\r\n\r\n".to_string();
             
             stream.write_all(response.to_string().as_bytes()).unwrap();
         }

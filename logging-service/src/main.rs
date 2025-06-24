@@ -38,7 +38,7 @@ fn main() {
     
     for stream in listener.incoming() {
         let stream = stream.unwrap();
-        handle_connection(stream, args.debug, hazelcast_ip.to_owned(), hazelcast_port.clone(), &args.hazelcast_map, &args.cluster_name);
+        handle_connection(stream, args.debug, hazelcast_ip.to_owned(), hazelcast_port, &args.hazelcast_map, &args.cluster_name);
     }
 }
 
@@ -57,7 +57,7 @@ fn handle_connection(mut stream: TcpStream, show_debug: bool, hazelcast_ip: Stri
                 if values.len() == 2{
                     if Uuid::from_str(values[0]).is_ok(){
                         
-                        let client = HazelcastRestClient::new(&hazelcast_ip, &hazelcast_port);
+                        let client = HazelcastRestClient::new(&hazelcast_ip, hazelcast_port);
 
                         let res = client.map_put(hazelcast_map,&Into::<String>::into(values[0]), &vec![("Content-Type", "plain/text"), ("factoryId", "-1")], values[1]);
                         if show_debug {

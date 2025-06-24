@@ -51,7 +51,7 @@ fn handle_connection(mut stream: TcpStream, server_config: &String, debug:bool){
     let logging_adresses = 
     match request.method(){
         &http::Method::POST | &http::Method::GET =>{
-            match get_data_from_config(&server_config, "logging", debug){
+            match get_data_from_config(server_config, "logging", debug){
                 Some(ok) => Some(ok),
                 None => return,
             }
@@ -116,7 +116,7 @@ fn handle_connection(mut stream: TcpStream, server_config: &String, debug:bool){
             }
             
             let http_client = Client::new();
-            let message_adresses =  get_data_from_config(&server_config, "message", debug);
+            let message_adresses =  get_data_from_config(server_config, "message", debug);
 
             let mut http_result_message = None ;
 
@@ -192,22 +192,22 @@ fn get_data_from_config(server_config: &str, name: &str, debug: bool) -> Option<
                 Ok(adress) => {             
                     match std::str::from_utf8(&adress){
                         Ok(actuall_adress) => {
-                            Some(format!("{}",actuall_adress.to_owned()))},
+                            Some(actuall_adress.to_owned().to_string())},
                         Err(err) => {
                             println!("Error found while converting adress of {} service to UTF-8: {}", name, err);
-                            return None;
+                            None
                         },
                     }
                 },
                 Err(err) =>{
                     println!("Error found while reading adress of {} service: {}", name, err);
-                    return None;
+                    None
                 }
             }
         },
         Err(err) => {
             println!("Response error: {}", err);
-            return None;
+            None
         }
     }
 }
