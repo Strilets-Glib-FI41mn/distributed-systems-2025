@@ -66,7 +66,7 @@ fn handle_connection(mut stream: TcpStream, show_debug: bool, hazelcast_ip: Stri
 
                         match res{
                             Ok(response) => {
-                                stream.write_all(response.as_bytes()).unwrap();
+                                stream.write_all((format!("HTTP/1.1 200 OK\nContent-Length: {}\n\n{}",response.as_bytes().len(), response)).as_bytes()).unwrap();
                             },
                             Err(_) => {
                                 let response = "HTTP/1.1 500 Internal Server Error\r\n\r\n";

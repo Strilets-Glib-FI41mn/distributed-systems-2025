@@ -96,7 +96,9 @@ fn handle_connection(mut stream: TcpStream, logging_adresses: &Vec<String>, mess
                     let mut adresses_shuffled = logging_adresses.clone();
                     adresses_shuffled.shuffle(&mut rand::rng());
                     let sent_string = serde_json::to_string(&adresses_shuffled).unwrap();
-                    println!("{}", &sent_string);
+                    if debug{
+                        println!("Sending logging adresses {}", &sent_string);
+                    }
                     //.unwrap_or("".to_owned());
 
                     response = format!("HTTP/1.1 200 OK\nContent-Type: plain/text\nContent-Length: {}\n\n{}", sent_string.as_bytes().len(), sent_string);
@@ -106,7 +108,7 @@ fn handle_connection(mut stream: TcpStream, logging_adresses: &Vec<String>, mess
                     adresses_shuffled.shuffle(&mut rand::rng());
                     let sent_string = serde_json::to_string(&adresses_shuffled).unwrap();
                     if debug{
-                        println!("{}", &sent_string);
+                        println!("Sending message adresses {}", &sent_string);
                     }
                     //.unwrap_or("".to_owned());
                     response = format!("HTTP/1.1 200 OK\nContent-Type: plain/text\nContent-Length: {}\n\n{}", sent_string.as_bytes().len(), sent_string);

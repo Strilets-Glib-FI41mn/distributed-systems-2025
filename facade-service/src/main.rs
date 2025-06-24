@@ -1,6 +1,7 @@
 use std::{
     io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}
 };
+
 use http_reader::HttpReader;
 //use reqwest::blocking::{Request, RequestBuilder};
 use reqwest::blocking::Client;
@@ -41,7 +42,7 @@ fn handle_connection(mut stream: TcpStream, server_config: &String, debug:bool){
     let mut buf_reader = BufReader::new(&stream);
     let mut line_consumer = HttpReader::new(&mut buf_reader);
     let request = line_consumer.make_request();
-    if debug{println!("{:?}", request);}
+    if debug{println!("Request aquired:\n{:?}", request);}
     
     let mut response = "HTTP/1.1 401 Not Implemented\r\n\r\n".to_owned();
 
@@ -62,24 +63,27 @@ fn handle_connection(mut stream: TcpStream, server_config: &String, debug:bool){
     let logging_adresses = serde_json::from_str(&logging_adresses.unwrap_or("".to_owned())).unwrap_or(Vec::<String>::new());
 
     if debug{
-        println!("{:#?}", &logging_adresses);
+        println!("Logging adresses:\n{:#?}", &logging_adresses);
     }
     match *request.method(){
         http::Method::POST =>{
+            
             response = "HTTP/1.1 500 Internal Server Error\r\n\r\n".to_owned();
+            let mut code = "400 Bad Request";
             if let Some(body) = request.body(){
                 
                 let id = Uuid::new_v4();
                 let mut http_result;// = Ok(String::default());
                 for logging_adress in logging_adresses{
                     http_result = http_client
-                    .post(format!("{}/post", logging_adress))
+                    .post(format!("http://{}/post", logging_adress))
                     .body(format!("{id}: {body}")).send();
-                    if debug{println!("{:?}", &http_result);}
+                    if debug{println!("Result of sending put request to logging at {}\n{:?}", &logging_adress, &http_result);}
                     match http_result{
                         Ok(resp) => {
                             match resp.text(){
                                 Ok(val) => {
+                                    code = "200 OK";
                                     response = val.clone();
                                     break;
                                 },
@@ -91,7 +95,9 @@ fn handle_connection(mut stream: TcpStream, server_config: &String, debug:bool){
                     };
                     
                 }
-                stream.write_all(response.as_bytes()).unwrap();
+                stream.write_all(
+                    format!("HTTP/1.1 {}\n\nContent-Length: {}\n\n{}",&code, response.as_bytes().len(), &response).as_bytes()
+                ).unwrap();
             }
         
         http::Method::GET => {
@@ -101,6 +107,7 @@ fn handle_connection(mut stream: TcpStream, server_config: &String, debug:bool){
                 http_result_logging = Some(http_client
                 .get(format!("http://{}/get", logging_adress))
                 .send());
+                if debug{println!("Result of sending get request to loggig at {}\n{:?}", &logging_adress, &http_result_logging);}
                 if let Some(res) =  &http_result_logging{
                     if res.is_ok(){
                         break
@@ -121,6 +128,7 @@ fn handle_connection(mut stream: TcpStream, server_config: &String, debug:bool){
                 http_result_message = Some(http_client
                 .get(format!("http://{}/get", message_adress))
                 .send());
+            if debug{println!("Result of sending get request to message at {}\n{:?}", &message_adress, &http_result_logging);}
             if let Some(res) =  &http_result_message{
                 if res.is_ok(){
                     break
@@ -141,7 +149,8 @@ fn handle_connection(mut stream: TcpStream, server_config: &String, debug:bool){
                         if debug{
                             println!("{} {}\r\n", &text_1, &text_2)
                         }
-                        Some(format!("{} {}\r\n", &text_1, &text_2))
+                        let both_text = format!("logging: {}\nmessage: {}",  &text_1, &text_2);
+                        Some(format!("HTTP/1.1 200 OK\nContent-Length: {}\n\n{}", both_text.as_bytes().len(), both_text))
                     }else{
                         None
                     }
@@ -183,7 +192,6 @@ fn get_data_from_config(server_config: &str, name: &str, debug: bool) -> Option<
                 Ok(adress) => {             
                     match std::str::from_utf8(&adress){
                         Ok(actuall_adress) => {
-                            if debug {println!("address???? {}", actuall_adress);} 
                             Some(format!("{}",actuall_adress.to_owned()))},
                         Err(err) => {
                             println!("Error found while converting adress of {} service to UTF-8: {}", name, err);
