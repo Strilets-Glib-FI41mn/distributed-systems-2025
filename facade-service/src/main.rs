@@ -47,7 +47,7 @@ fn handle_connection(mut stream: TcpStream, server_config: &String, debug:bool){
 
     let http_client = Client::new();
 
-    let logging_adress = 
+    let logging_adresses = 
     match request.method(){
         &http::Method::POST | &http::Method::GET =>{
             match get_data_from_config(&server_config, "logging", debug){
@@ -59,55 +59,80 @@ fn handle_connection(mut stream: TcpStream, server_config: &String, debug:bool){
             None
         }
     };
+    let logging_adresses = serde_json::from_str(&logging_adresses.unwrap_or("".to_owned())).unwrap_or(Vec::<String>::new());
+
+    if debug{
+        println!("{:#?}", &logging_adresses);
+    }
     match *request.method(){
         http::Method::POST =>{
             response = "HTTP/1.1 500 Internal Server Error\r\n\r\n".to_owned();
             if let Some(body) = request.body(){
                 
                 let id = Uuid::new_v4();
-                
-                let http_result = http_client
-                .post(format!("{}/post", logging_adress.unwrap()))
-                .body(format!("{id}: {body}")).send();
-                if debug{println!("{:?}", http_result);}
-                match http_result{
-                    Ok(resp) => {
-                        response = 
-                        match resp.text(){
-                            Ok(val) => val,
-                            Err(err) => err.to_string(),
-                        }
-                    },
-                    Err(err) => response = err.to_string(),
+                let mut http_result;// = Ok(String::default());
+                for logging_adress in logging_adresses{
+                    http_result = http_client
+                    .post(format!("{}/post", logging_adress))
+                    .body(format!("{id}: {body}")).send();
+                    if debug{println!("{:?}", &http_result);}
+                    match http_result{
+                        Ok(resp) => {
+                            match resp.text(){
+                                Ok(val) => {
+                                    response = val.clone();
+                                    break;
+                                },
+                                Err(err) => response = err.to_string(),
+                            }
+                        },
+                        Err(err) => response = err.to_string(),
+                    }
+                    };
+                    
                 }
+                stream.write_all(response.as_bytes()).unwrap();
             }
-
-            stream.write_all(response.as_bytes()).unwrap();
-        }
+        
         http::Method::GET => {
             let http_client = Client::new();
-            let http_result_logging = http_client
-                .get(format!("http://{}/get", logging_adress.unwrap()))
-                .send();
-
+            let mut http_result_logging = None ;
+            for logging_adress in logging_adresses{
+                http_result_logging = Some(http_client
+                .get(format!("http://{}/get", logging_adress))
+                .send());
+                if let Some(res) =  &http_result_logging{
+                    if res.is_ok(){
+                        break
+                    }
+                }
+            }
             
             let http_client = Client::new();
-            let message_adress =  get_data_from_config(&server_config, "message", debug);
-            if message_adress.is_none(){
-                stream.write_all("HTTP/1.1 500 Internal Server Error\r\n\r\n".to_owned().as_bytes()).unwrap();
-                return;
-            }
-            let http_result_message = http_client
-                .get(format!("http://{}/get",message_adress.unwrap().to_string()))
-                //.get(format!("{}/get",message_adress.to_string()))
-                .send();
+            let message_adresses =  get_data_from_config(&server_config, "message", debug);
+
+            let mut http_result_message = None ;
+
+            let message_adresses = serde_json::from_str(&message_adresses.unwrap_or("".to_owned())).unwrap_or(Vec::<String>::new());
             if debug{
-                println!("http_result_logging {:?}", &http_result_logging);
-                println!("http_result_message {:?}", &http_result_message);
+                println!("{:#?}", &message_adresses);
             }
+            for message_adress in message_adresses{
+                http_result_message = Some(http_client
+                .get(format!("http://{}/get", message_adress))
+                .send());
+            if let Some(res) =  &http_result_message{
+                if res.is_ok(){
+                    break
+                }
+            }
+            }
+            
+            let (http_result_logging_res, http_result_message_res) = (http_result_logging.expect("logging addresses were not provided"), http_result_message.expect("message adresses were not provided"));
+
             let response = 
             
-            match (http_result_logging, http_result_message){
+            match (http_result_logging_res, http_result_message_res){
                 (Ok(l), Ok(m)) => {
                     if debug{
                         println!("Responses:\n{:?} {:?}\r\n", &l, &m)
@@ -157,7 +182,9 @@ fn get_data_from_config(server_config: &str, name: &str, debug: bool) -> Option<
             match address.bytes(){
                 Ok(adress) => {             
                     match std::str::from_utf8(&adress){
-                        Ok(actuall_adress) => {println!("address???? {}", actuall_adress); Some(format!("{}",actuall_adress.to_owned()))},
+                        Ok(actuall_adress) => {
+                            if debug {println!("address???? {}", actuall_adress);} 
+                            Some(format!("{}",actuall_adress.to_owned()))},
                         Err(err) => {
                             println!("Error found while converting adress of {} service to UTF-8: {}", name, err);
                             return None;
