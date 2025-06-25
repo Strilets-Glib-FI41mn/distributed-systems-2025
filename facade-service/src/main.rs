@@ -167,8 +167,14 @@ fn handle_connection(mut stream: TcpStream, server_config: &str, debug:bool, kaf
                 .send());
             if debug{println!("Result of sending get request to message at {}\n{:?}", &message_adress, &http_result_logging);}
             if let Some(res) =  &http_result_message{
-                if res.is_ok(){
-                    break
+                if let Ok(res) = res{
+                    if debug{
+                        println!("Response of the message {}", &res.status());
+                    }
+                    if res.status().is_success(){
+                        println!("Is success");
+                        break
+                    }
                 }
             }
             }
@@ -186,19 +192,21 @@ fn handle_connection(mut stream: TcpStream, server_config: &str, debug:bool, kaf
                         if debug{
                             println!("{} {}\r\n", &text_1, &text_2)
                         }
-                        let both_text = format!("logging: {}\nmessage: {}",  &text_1, &text_2);
+                        let both_text = format!("logging: {}\n message: {}\n",  &text_1, &text_2);
                         Some(format!("HTTP/1.1 200 OK\nContent-Length: {}\n\n{}", both_text.as_bytes().len(), both_text))
                     }else{
                         None
                     }
                 },
-                (Ok(_), Err(message_error)) => {
+                (Ok(text_1), Err(message_error)) => {
                     println!("Message error: {}", message_error);
-                    None
+                    let both_text = format!("logging: {:#?}\n message: {}\n",  &text_1, &message_error);
+                    Some(format!("HTTP/1.1 200 OK\nContent-Length: {}\n\n{}", both_text.as_bytes().len(), both_text))                
                 },
-                (Err(logging_error), Ok(_)) => {
+                (Err(logging_error), Ok(test_2)) => {
                     println!("Logging error: {}", logging_error);
-                    None
+                    let both_text = format!("logging: {}\n message: {:#?}\n",  &logging_error, &test_2);
+                    Some(format!("HTTP/1.1 200 OK\nContent-Length: {}\n\n{}", both_text.as_bytes().len(), both_text))
                 },
                 (Err(message_error), Err(logging_error)) => {
                     println!("Message error: {}", message_error);

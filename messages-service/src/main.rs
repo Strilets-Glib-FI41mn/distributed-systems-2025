@@ -55,9 +55,11 @@ fn handle_connection(mut stream: TcpStream, show_debug: bool, consume_from: &str
                     .create(){
                         Ok(mut consumer) => {
 
-                            for mss in consumer.poll().iter().take(1) {
-                                for ms in mss.iter().take(1) {
-                                    for message in ms.messages(){
+                            if let Some(mss) = consumer.poll().iter().next() {
+                                if let Some(ms) = mss.iter().next() {
+                                    let partition = ms.partition();
+                                    //for message in 
+                                    if let Some(message) = ms.messages().get(1){
                                         let key = match String::from_utf8(message.key.to_vec()){
                                             Ok(key) => key,
                                             Err(err) => format!("Instead of key found: {}", err.to_string()),
@@ -72,14 +74,16 @@ fn handle_connection(mut stream: TcpStream, show_debug: bool, consume_from: &str
                                             println!("{res_message}");
                                         }
                                         messages_found.push(res_message);
-                                    }
-                                    if consume{
-                                        consumer.consume_messageset(ms);
-                                        consumer.commit_consumed();        
+                                        if consume{
+                                            consumer.consume_message(kafka_topic, partition, message.offset).unwrap();
+                                            consumer.commit_consumed().unwrap();
+                                        }
                                     }
                                 }
                             }
-            
+                        if show_debug{
+                            println!("Found messages: {:#?}", &messages_found);
+                        }
                         if messages_found.len() > 0{
                             let messages_sent = serde_json::to_string(&messages_found);
                             let string_used = match messages_sent{
@@ -102,7 +106,7 @@ fn handle_connection(mut stream: TcpStream, show_debug: bool, consume_from: &str
             }
 
             
-            stream.write_all(response.to_string().as_bytes()).unwrap();
+            stream.write_all(response.to_string().as_bytes());//.unwrap();
         }
         _ =>{
             
