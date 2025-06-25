@@ -18,9 +18,12 @@ struct Arguments {
     //#[arg(long)]
     //pub mesage_service: String,
     #[arg(long, short = 'd', action)]
-    pub debug: bool
+    pub debug: bool,
+    //#[arg(long, value_name = "kafka adress")]
+    //pub produce_to: String,
+    #[arg(long, value_name = "kafka topic used as queue")]
+    pub kafka_topic: String,
 }
-
 
 fn main() {
     let args = Arguments::parse();
@@ -34,11 +37,11 @@ fn main() {
     
     for stream in listener.incoming() {
         let stream = stream.unwrap();
-        handle_connection(stream, &args.server_config,  args.debug);
+        handle_connection(stream, &args.server_config,  args.debug, &args.kafka_topic);
     }
 }
 
-fn handle_connection(mut stream: TcpStream, server_config: &String, debug:bool){
+fn handle_connection(mut stream: TcpStream, server_config: &str, debug:bool, kafka_topic: &str){
     let mut buf_reader = BufReader::new(&stream);
     let mut line_consumer = HttpReader::new(&mut buf_reader);
     let request = line_consumer.make_request();
@@ -93,8 +96,41 @@ fn handle_connection(mut stream: TcpStream, server_config: &String, debug:bool){
                         Err(err) => response = err.to_string(),
                     }
                     };
-                    
+                    {
+                        //use std::fmt::Write;
+                        use std::time::Duration;
+                        use kafka::producer::{Producer, Record, RequiredAcks};
+                        let produce_targets: Vec<String> = serde_json::from_str(&get_data_from_config(server_config, "queue", debug).unwrap_or_default()).unwrap_or(vec![]);
+                        for produce_to in produce_targets{
+                            match Producer::from_hosts(vec!(produce_to.to_string()))
+                                .with_ack_timeout(Duration::from_secs(1))
+                                .with_required_acks(RequiredAcks::One)
+                                .create(){
+                                    Ok(mut producer) => {
+                                        let res = producer.send(&Record::from_key_value(kafka_topic, id.to_string(), body.clone()));
+                                        
+                                        //.send(&Record::from_value(kafka_topic, format!("{id}: {body}").as_bytes()));//.unwrap();
+                                        match res{
+                                            Ok(_) => {
+                                                break},
+                                            Err(err) => {
+                                                if debug { println!("Failed to create a send a value: {:?}", err);}
+                                            },
+                                        }
+                                    },
+                                    Err(err) => {
+                                        if debug{
+                                            println!("Failed to create a producer {:?}", err);
+                                        }
+                                    },
+                                }
+                                //.unwrap();
+                        }
+                    }                    
                 }
+
+
+
                 stream.write_all(
                     format!("HTTP/1.1 {}\n\nContent-Length: {}\n\n{}",&code, response.as_bytes().len(), &response).as_bytes()
                 ).unwrap();
@@ -125,6 +161,7 @@ fn handle_connection(mut stream: TcpStream, server_config: &String, debug:bool){
                 println!("{:#?}", &message_adresses);
             }
             for message_adress in message_adresses{
+                
                 http_result_message = Some(http_client
                 .get(format!("http://{}/get", message_adress))
                 .send());

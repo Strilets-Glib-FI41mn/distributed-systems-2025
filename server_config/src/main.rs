@@ -19,28 +19,30 @@ struct Arguments {
     pub logging_list: Option<Vec<String>>,
     #[arg(long, num_args = 1..)]
     pub messages: Option<Vec<String>>,
+    #[arg(long, num_args = 1..)]
+    pub distributed_queue: Option<Vec<String>>,
     #[arg(long, short = 'd', action)]
     pub debug: bool
 }
 #[derive(Deserialize)]
-struct Config{pub logging_adresses: Vec<String>, pub messages: Vec<String>}
+struct Config{pub logging_adresses: Vec<String>, pub messages: Vec<String>, pub distributed_queue: Vec<String>}
 fn main() {
 
     let args = Arguments::parse();
     if args.debug{ print!("{:?}", args); }
-    if args.filepath.is_some() && (args.logging_list.is_some() || args.messages.is_some()){
+    if args.filepath.is_some() && (args.logging_list.is_some() || args.messages.is_some() || args.distributed_queue.is_some()){
             panic!("Filepath forbids usage of logging-list and message arguments because it reads both from a file");
     }
 
-    if args.filepath.is_none() && (args.logging_list.is_none() || args.messages.is_none()){
+    if args.filepath.is_none() && (args.logging_list.is_none() || args.messages.is_none()|| args.distributed_queue.is_none()){
         panic!("Either provide --filepath -f with the tolm file or provide both --logging-list and --message");
 }
     //return;
     
     let config =
-    match (args.logging_list, args.messages){
-        (Some(logging_adresses),Some(messages)) => Config{logging_adresses, messages},
-        (None, None) => {
+    match (args.logging_list, args.messages, args.distributed_queue){
+        (Some(logging_adresses),Some(messages), Some(distributed_queue)) => Config{logging_adresses, messages, distributed_queue},
+        (None, None, None) => {
             match args.filepath{
                 Some(path) => {
                     let contents = fs::read_to_string(&path)
@@ -66,11 +68,11 @@ fn main() {
     
     for stream in listener.incoming() {
         let stream = stream.unwrap();
-        handle_connection(stream,  &config.logging_adresses, &config.messages, debug);
+        handle_connection(stream,  &config.logging_adresses, &config.messages, &config.distributed_queue, debug);
     }
 }
 
-fn handle_connection(mut stream: TcpStream, logging_adresses: &Vec<String>, messages: &Vec<String>, debug:bool){
+fn handle_connection(mut stream: TcpStream, logging_adresses: &Vec<String>, messages: &Vec<String>, distributed_queue: &Vec<String>, debug:bool){
     let mut buf_reader = BufReader::new(&stream);
     let mut line_consumer = HttpReader::new(&mut buf_reader);
     let request = line_consumer.make_request();
@@ -105,6 +107,16 @@ fn handle_connection(mut stream: TcpStream, logging_adresses: &Vec<String>, mess
                 }
                 "message" => {
                     let mut adresses_shuffled = messages.clone();
+                    adresses_shuffled.shuffle(&mut rand::rng());
+                    let sent_string = serde_json::to_string(&adresses_shuffled).unwrap();
+                    if debug{
+                        println!("Sending message adresses {}", &sent_string);
+                    }
+                    //.unwrap_or("".to_owned());
+                    response = format!("HTTP/1.1 200 OK\nContent-Type: plain/text\nContent-Length: {}\n\n{}", sent_string.as_bytes().len(), sent_string);
+                },
+                "queue" => {
+                    let mut adresses_shuffled = distributed_queue.clone();
                     adresses_shuffled.shuffle(&mut rand::rng());
                     let sent_string = serde_json::to_string(&adresses_shuffled).unwrap();
                     if debug{
