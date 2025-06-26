@@ -50,7 +50,7 @@ async fn main() {
     };
     let id = Uuid::new_v4(); //node name
     let service_name = "facade-service"; //service name
-    let node = format!("facade-service:{id}"); //service name
+    let node = "facade-service"; //service name
 
 
     
@@ -60,8 +60,7 @@ async fn main() {
 
     let facade_address: String = format!("127.0.0.1:{}", &port);
     let listener = TcpListener::bind(facade_address).unwrap();
-
-
+    
     //println!("http://{facade_service_ip}:{facade_service_port}/get/health");
     let payload = RegisterEntityPayload {
         ID: Some(id.to_string()),
@@ -79,24 +78,33 @@ async fn main() {
             Port: Some(facade_service_port), 
             Namespace: None,
         }),
-        Checks: vec![RegisterEntityCheck{ Node: Some(node), CheckID: Some(id.to_string()), Name: "still_here".to_owned(), 
+        Checks: vec![RegisterEntityCheck{ 
+            Node: None, CheckID: None,
+            //Node: Some(node.to_string()), CheckID: Some(id.to_string()), 
+            Name: "health".to_owned(), 
         Notes: None,
-        // Status: None,
-        Status: Some("passing".to_owned()),
+        //Status: None,
+        Status: Some("warning".to_owned()),
         ServiceID: None,
-        Definition: HashMap::from([
-            //("args".to_owned(), "curl localhost".to_owned()),
-            ("http".to_owned(), format!("http://{facade_service_ip}:{facade_service_port}/get/health").to_owned()),
-            ("name".to_owned(), "/health".to_owned()),
-            ("interval".to_owned(), "10s".to_owned()),
-            ("timeout".to_owned(), "4s".to_owned()),
-            ("method".to_owned(), "GET".to_owned()), // Specify the HTTP method
+        Definition: 
+        HashMap::from([
+            
+            //("Args".to_owned(), format!("['CURL', 'http://{facade_service_ip}:{facade_service_port}/get/health']").to_owned()),
+            ("Name".to_owned(), format!("healt1").to_owned()),
+            ("Http".to_owned(), format!("http://{facade_service_ip}:{facade_service_port}/get/health").to_owned()),
+            ("Type".to_owned(), ("http").to_owned()),
+            ("Interval".to_owned(), "1s".to_owned()),
+            //("timeout".to_owned(), "4s".to_owned()),
+            ("Method".to_owned(), "GET".to_owned()), // Specify the HTTP method
             //,
         ])
         }],
+        
         SkipNodeUpdate: None,
     };
-
+    if args.debug{
+        println!("{}", serde_json::to_string(&payload).unwrap_or("".into()));
+    }
     consul.register_entity(&payload).await.expect("messages service relies on consul agent registration");
 
     
@@ -112,8 +120,8 @@ async fn handle_connection(mut stream: TcpStream, debug: bool, consul: &Consul){
     let request = line_consumer.make_request();
     if debug{println!("Request aquired:\n{:?}", request);}
     if request.method() == &http::Method::GET && request.uri().path().split("/").collect::<Vec<_>>().get(2) == Some(&"health"){
-        //stream.write_all("HTTP/1.1 200 OK\r\n\r\n".to_owned().as_bytes()).unwrap();
-        stream.write_all("HTTP/1.1 429\r\n\r\n".to_owned().as_bytes()).unwrap();
+        stream.write_all("HTTP/1.1 200 OK\r\n\r\n".to_owned().as_bytes()).unwrap();
+        //stream.write_all("HTTP/1.1 429\r\n\r\n".to_owned().as_bytes()).unwrap();
         return;
     }
     
@@ -150,9 +158,9 @@ async fn handle_connection(mut stream: TcpStream, debug: bool, consul: &Consul){
             return;
         }
     };
-
     let logging_adresses: Vec<_> = {
-        consul.get_service_nodes(GetServiceNodesRequest{
+        consul
+        .get_service_nodes(GetServiceNodesRequest{
             service: "logging-service",
             near: None,
             passing: true,

@@ -45,7 +45,7 @@ async fn main() {
     };
     let id = Uuid::new_v4(); //node name
     let service_name = "messages-service"; //service name
-    let node = format!("messages-service:{id}"); //service name
+    let node = "messages-service"; //service name
 
 
     
@@ -72,13 +72,13 @@ async fn main() {
             Port: Some(message_service_port), 
             Namespace: None,
         }),
-        Checks: vec![RegisterEntityCheck{ Node: Some(node), CheckID: Some(id.to_string()), Name: "still_here".to_owned(), 
+        Checks: vec![RegisterEntityCheck{Node: Some(node.to_string()), CheckID: Some(id.to_string()), Name: "still_here".to_owned(), 
         Notes: None, Status: Some("passing".to_owned()),
         ServiceID: None, 
         Definition: HashMap::from([
             //("args".to_owned(), "curl localhost".to_owned()),
             ("http".to_owned(), format!("http://{message_service_ip}:{message_service_port}/get/health").to_owned()),
-            ("name".to_owned(), "/health".to_owned()),
+            //("name".to_owned(), "/health".to_owned()),
             ("interval".to_owned(), "10s".to_owned()),
             ("timeout".to_owned(), "4s".to_owned()),
             ("method".to_owned(), "GET".to_owned()),

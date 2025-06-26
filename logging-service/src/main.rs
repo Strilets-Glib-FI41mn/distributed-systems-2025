@@ -1,4 +1,4 @@
-use std::{collections::HashMap, env, fmt::format, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, str::FromStr, time::Duration};
+use std::{collections::HashMap, env, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, str::FromStr, time::Duration};
 
 use http_reader::HttpReader;
 
@@ -46,7 +46,7 @@ async fn main() {
     };
     let id = Uuid::new_v4(); //node name
     let service_name = "logging-service"; //service name
-    let node = format!("logging-service:{id}"); //service name
+    let node = "logging-service"; //service name
 
     let consul = Consul::new(consul_config);
     let logging_service_port = args.port;
@@ -71,7 +71,7 @@ async fn main() {
             Port: Some(logging_service_port), 
             Namespace: None,
         }),
-        Checks: vec![RegisterEntityCheck{ Node: Some(node), CheckID: Some(id.to_string()), Name: "still_here".to_owned(), 
+        Checks: vec![RegisterEntityCheck{ Node: Some(node.to_string()), CheckID: Some(id.to_string()), Name: "still_here".to_owned(), 
         Notes: None, Status: Some("passing".to_owned()),
         ServiceID: None, 
         
