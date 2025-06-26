@@ -1,4 +1,4 @@
-use std::{collections::HashMap, env, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, str::FromStr, time::Duration};
+use std::{collections::HashMap, env, fmt::format, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, str::FromStr, time::Duration};
 
 use http_reader::HttpReader;
 
@@ -46,7 +46,7 @@ async fn main() {
     };
     let id = Uuid::new_v4(); //node name
     let service_name = "logging-service"; //service name
-    let node = "logging-service"; //service name
+    let node = format!("logging-service:{id}"); //service name
 
     let consul = Consul::new(consul_config);
     let logging_service_port = args.port;
@@ -71,7 +71,7 @@ async fn main() {
             Port: Some(logging_service_port), 
             Namespace: None,
         }),
-        Checks: vec![RegisterEntityCheck{ Node: None, CheckID: Some(id.to_string()), Name: "still_here".to_owned(), 
+        Checks: vec![RegisterEntityCheck{ Node: Some(node), CheckID: Some(id.to_string()), Name: "still_here".to_owned(), 
         Notes: None, Status: Some("passing".to_owned()),
         ServiceID: None, 
         
@@ -80,7 +80,8 @@ async fn main() {
             ("http".to_owned(), format!("http://{logging_service_ip}:{logging_service_port}/get/health").to_owned()),
             ("name".to_owned(), "/health".to_owned()),
             ("interval".to_owned(), "10s".to_owned()),
-            ("timeout".to_owned(), "3s".to_owned())
+            ("timeout".to_owned(), "4s".to_owned()),
+            ("method".to_owned(), "GET".to_owned()),
         ])
         }],
         SkipNodeUpdate: None,
