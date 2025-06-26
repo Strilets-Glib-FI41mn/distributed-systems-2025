@@ -59,7 +59,7 @@ async fn main() {
     let payload = RegisterEntityPayload {
         ID: Some(id.to_string()),
         Node: node.to_string(),
-        Address: message_service_ip.to_owned(), //server address
+        Address: message_service_ip.to_string(), //server address
         Datacenter: None,
         TaggedAddresses: Default::default(),
         NodeMeta: Default::default(),
@@ -74,10 +74,15 @@ async fn main() {
         }),
         Checks: vec![RegisterEntityCheck{ Node: None, CheckID: Some(id.to_string()), Name: "still_here".to_owned(), 
         Notes: None, Status: Some("passing".to_owned()),
-        ServiceID: None, Definition: HashMap::from([
-            ("args".to_owned(), "curl, localhost".to_owned()),
-            ("interval".to_owned(), "10s".to_owned())
-        ]) }],
+        ServiceID: None, 
+        Definition: HashMap::from([
+            //("args".to_owned(), "curl localhost".to_owned()),
+            ("http".to_owned(), format!("http://{message_service_ip}:{message_service_port}/get/health").to_owned()),
+            ("name".to_owned(), "/health".to_owned()),
+            ("interval".to_owned(), "10s".to_owned()),
+            ("timeout".to_owned(), "3s".to_owned())
+        ])
+        }],
         SkipNodeUpdate: None,
     };
 
@@ -98,6 +103,10 @@ async fn handle_connection(mut stream: TcpStream, show_debug: bool, consul: &Con
         println!("{:?}", request);
         //println!("{:#?}", consul.get_all_registered_service_names(None));
     }
+    if request.method() == &http::Method::GET && request.uri().path().split("/").collect::<Vec<_>>().get(2) == Some(&"health"){
+        stream.write_all("HTTP/1.1 200 OK\r\n\r\n".to_owned().as_bytes()).unwrap();
+        return;
+    }
 
 
     match *request.method(){
@@ -105,7 +114,7 @@ async fn handle_connection(mut stream: TcpStream, show_debug: bool, consul: &Con
             let mut response = "HTTP/1.1 501 Not Implemented\r\n\r\n".to_string();
             let mut messages_found = vec![];
             let consume_from_r =  consul.read_key(ReadKeyRequest{
-                key: "kafka_ip",
+                key: "kafka_address",
                 namespace: "",
                 datacenter: "",
                 recurse: true,

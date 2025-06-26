@@ -51,8 +51,8 @@ async fn main() {
     let consul = Consul::new(consul_config);
     let logging_service_port = args.port;
     let logging_service_ip = args.ip.as_ref().map_or("127.0.0.1", |v| v);
-    let message_adress: String = format!("{}:{}", logging_service_ip, logging_service_port);
-    let listener = TcpListener::bind(message_adress).unwrap();
+    let logging_adress: String = format!("{}:{}", logging_service_ip, logging_service_port);
+    let listener = TcpListener::bind(logging_adress).unwrap();
 
 
     let payload = RegisterEntityPayload {
@@ -73,10 +73,16 @@ async fn main() {
         }),
         Checks: vec![RegisterEntityCheck{ Node: None, CheckID: Some(id.to_string()), Name: "still_here".to_owned(), 
         Notes: None, Status: Some("passing".to_owned()),
-        ServiceID: None, Definition: HashMap::from([
-            ("args".to_owned(), "curl, localhost".to_owned()),
-            ("interval".to_owned(), "10s".to_owned())
-        ]) }],
+        ServiceID: None, 
+        
+        Definition: HashMap::from([
+            //("args".to_owned(), "curl localhost".to_owned()),
+            ("http".to_owned(), format!("http://{logging_service_ip}:{logging_service_port}/get/health").to_owned()),
+            ("name".to_owned(), "/health".to_owned()),
+            ("interval".to_owned(), "10s".to_owned()),
+            ("timeout".to_owned(), "3s".to_owned())
+        ])
+        }],
         SkipNodeUpdate: None,
     };
 
@@ -94,6 +100,10 @@ async fn handle_connection(mut stream: TcpStream, show_debug: bool, consul: &Con
     let mut line_consumer = HttpReader::new(&mut buf_reader);
     let request = line_consumer.make_request();
     if show_debug {println!("{:?}", request);}
+    if request.method() == &http::Method::GET && request.uri().path().split("/").collect::<Vec<_>>().get(2) == Some(&"health"){
+        stream.write_all("HTTP/1.1 200 OK\r\n\r\n".to_owned().as_bytes()).unwrap();
+        return;
+    }
 
     let (hazelcast_map, hazelcast_ip, hazelcast_port) =
     match *request.method() {

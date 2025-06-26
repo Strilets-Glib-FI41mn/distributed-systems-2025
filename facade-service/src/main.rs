@@ -58,6 +58,9 @@ async fn main() {
     let facade_service_port = args.port.unwrap_or(8362);
     let facade_service_ip = args.ip.as_ref().map_or("127.0.0.1", |v| v);
 
+    let facade_address: String = format!("127.0.0.1:{}", &port);
+    let listener = TcpListener::bind(facade_address).unwrap();
+
 
     let payload = RegisterEntityPayload {
         ID: Some(id.to_string()),
@@ -76,21 +79,22 @@ async fn main() {
             Namespace: None,
         }),
         Checks: vec![RegisterEntityCheck{ Node: None, CheckID: Some(id.to_string()), Name: "still_here".to_owned(), 
-        Notes: None, Status: Some("passing".to_owned()),
-        ServiceID: None, Definition: HashMap::from([
-            ("args".to_owned(), "curl, localhost".to_owned()),
-            ("interval".to_owned(), "10s".to_owned())
-        ]) }],
+        Notes: None,
+        // Status: None,
+        Status: Some("passing".to_owned()),
+        ServiceID: None,
+        Definition: HashMap::from([
+            //("args".to_owned(), "curl localhost".to_owned()),
+            ("http".to_owned(), format!("http://{facade_service_ip}:{facade_service_port}/get/health").to_owned()),
+            ("name".to_owned(), "/health".to_owned()),
+            ("interval".to_owned(), "10s".to_owned()),
+            ("timeout".to_owned(), "3s".to_owned())
+        ])
+        }],
         SkipNodeUpdate: None,
     };
 
     consul.register_entity(&payload).await.expect("messages service relies on consul agent registration");
-
-
-
-
-    let facade_address: String = format!("127.0.0.1:{}", &port);
-    let listener = TcpListener::bind(facade_address).unwrap();
 
     
     for stream in listener.incoming() {
@@ -104,13 +108,14 @@ async fn handle_connection(mut stream: TcpStream, debug: bool, consul: &Consul){
     let mut line_consumer = HttpReader::new(&mut buf_reader);
     let request = line_consumer.make_request();
     if debug{println!("Request aquired:\n{:?}", request);}
+    if request.method() == &http::Method::GET && request.uri().path().split("/").collect::<Vec<_>>().get(2) == Some(&"health"){
+        stream.write_all("HTTP/1.1 200 OK\r\n\r\n".to_owned().as_bytes()).unwrap();
+        return;
+    }
     
     let mut response = "HTTP/1.1 401 Not Implemented\r\n\r\n".to_owned();
 
     let http_client = Client::new();
-
-    
-
     let kafka_topic = 
     match request.method(){
         &http::Method::POST | &http::Method::GET =>{
@@ -152,7 +157,7 @@ async fn handle_connection(mut stream: TcpStream, debug: bool, consul: &Consul){
             None
         ).await.iter().map(|response| response.response.clone())
         .fold(vec![], |mut acc:Vec<ServiceNode>, mut xs| {acc.append(&mut xs); return acc})
-        .iter().map(|a| format!("{}:{}", a.service.address, a.service.port)).collect()
+        .iter().map(|a| format!("{}:{}", a.node.address, a.service.port)).collect()
     };
 
 
@@ -166,11 +171,11 @@ async fn handle_connection(mut stream: TcpStream, debug: bool, consul: &Consul){
             None
         ).await.iter().map(|response| response.response.clone())
         .fold(vec![], |mut acc:Vec<ServiceNode>, mut xs| {acc.append(&mut xs); return acc})
-        .iter().map(|a| format!("{}:{}", a.service.address, a.service.port)).collect()
+        .iter().map(|a| format!("{}:{}", a.node.address, a.service.port)).collect()
     };
 
     let produce_targets =  consul.read_key(ReadKeyRequest{
-        key: "kafka_n",
+        key: "kafka_address",
         namespace: "",
         datacenter: "",
         recurse: true,
