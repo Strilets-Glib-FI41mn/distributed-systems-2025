@@ -1,5 +1,5 @@
 use std::{
-    io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}
+    collections::HashMap, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, time::Duration
 };
 
 use http_reader::HttpReader;
@@ -8,40 +8,98 @@ use reqwest::blocking::Client;
 use uuid::Uuid;
 
 use clap::Parser;
+use rs_consul::{types::*, Config, Consul};
 
 #[derive(Parser, Default,Debug)]
 struct Arguments {
     #[arg(short = 'p', long)]
-    pub port : Option<i32>,
-    #[arg(long)]
-    pub server_config: String,
-    //#[arg(long)]
-    //pub mesage_service: String,
+    pub port : Option<u16>,
+    
+    #[arg(value_name = "IP of facade service")]
+    pub ip: Option<String>,
+    
     #[arg(long, short = 'd', action)]
     pub debug: bool,
-    //#[arg(long, value_name = "kafka adress")]
-    //pub produce_to: String,
-    #[arg(long, value_name = "kafka topic used as queue")]
-    pub kafka_topic: String,
-}
 
-fn main() {
+    #[arg(long, value_name = "consul adress OPTIONAL")]
+    pub consul_address: Option<String>,
+    
+}
+#[tokio::main]
+async fn main() {
     let args = Arguments::parse();
     let port = args.port.unwrap_or(7878);
     if args.debug{
         println!("using port {port}")
     }
+
+    
+    let consul_config = {
+        match args.consul_address{
+            Some(address) =>{
+                Config {
+                    address, 
+                    token: None, // No token required in development mode
+                    ..Default::default() // Uses default values for other settings
+                }
+            }
+            None =>{
+                Config::from_env()
+            }
+        }
+    };
+    let id = Uuid::new_v4(); //node name
+    let service_name = "facade-service"; //service name
+    let node = "facade-service"; //service name
+
+
+    
+    let consul = Consul::new(consul_config);
+    let facade_service_port = args.port.unwrap_or(8362);
+    let facade_service_ip = args.ip.as_ref().map_or("127.0.0.1", |v| v);
+
+
+    let payload = RegisterEntityPayload {
+        ID: Some(id.to_string()),
+        Node: node.to_string(),
+        Address: facade_service_ip.to_owned(), //server address
+        Datacenter: None,
+        TaggedAddresses: Default::default(),
+        NodeMeta: Default::default(),
+        Service: Some(RegisterEntityService {
+            ID: Some(facade_service_port.to_string()),
+            Service: service_name.to_string(),
+            Tags: vec![],
+            TaggedAddresses: Default::default(),
+            Meta: Default::default(),
+            Port: Some(facade_service_port), 
+            Namespace: None,
+        }),
+        Checks: vec![RegisterEntityCheck{ Node: None, CheckID: Some(id.to_string()), Name: "still_here".to_owned(), 
+        Notes: None, Status: Some("passing".to_owned()),
+        ServiceID: None, Definition: HashMap::from([
+            ("args".to_owned(), "curl, localhost".to_owned()),
+            ("interval".to_owned(), "10s".to_owned())
+        ]) }],
+        SkipNodeUpdate: None,
+    };
+
+    consul.register_entity(&payload).await.expect("messages service relies on consul agent registration");
+
+
+
+
     let facade_address: String = format!("127.0.0.1:{}", &port);
     let listener = TcpListener::bind(facade_address).unwrap();
 
     
     for stream in listener.incoming() {
         let stream = stream.unwrap();
-        handle_connection(stream, &args.server_config,  args.debug, &args.kafka_topic);
+        handle_connection(stream,  args.debug,&consul).await//&args.server_config, &args.kafka_topic);
     }
 }
 
-fn handle_connection(mut stream: TcpStream, server_config: &str, debug:bool, kafka_topic: &str){
+async fn handle_connection(mut stream: TcpStream, debug: bool, consul: &Consul){
     let mut buf_reader = BufReader::new(&stream);
     let mut line_consumer = HttpReader::new(&mut buf_reader);
     let request = line_consumer.make_request();
@@ -51,19 +109,88 @@ fn handle_connection(mut stream: TcpStream, server_config: &str, debug:bool, kaf
 
     let http_client = Client::new();
 
-    let logging_adresses = 
+    
+
+    let kafka_topic = 
     match request.method(){
         &http::Method::POST | &http::Method::GET =>{
-            match get_data_from_config(server_config, "logging", debug){
-                Some(ok) => Some(ok),
-                None => return,
+            let kafka_topic_r =  consul.read_key(ReadKeyRequest{
+                key: "kafka_topic",
+                namespace: "",
+                datacenter: "",
+                recurse: true,
+                separator: "",
+                consistency: ConsistencyMode::Default,
+                index: None,
+                wait: Duration::from_secs(5),
+            }).await;
+            if debug {
+                println!("kafka topic(s) found: {:?}", kafka_topic_r);
+            }
+            
+            match kafka_topic_r{
+                Ok(kafka_topic) => {
+                    let vector:Vec<String> = kafka_topic.response.iter().map(|response| response.value.clone()).filter(|val| val.is_some()).map(|val| val.unwrap()).collect();
+                    vector.get(0).map_or("", |v| v).to_owned()
+                },
+                Err(_) => "".to_owned()
             }
         }
         _ =>{
-            None
+            stream.write_all(response.as_bytes()).unwrap();
+            return;
         }
     };
-    let logging_adresses = serde_json::from_str(&logging_adresses.unwrap_or("".to_owned())).unwrap_or(Vec::<String>::new());
+
+    let logging_adresses: Vec<_> = {
+        consul.get_service_nodes(GetServiceNodesRequest{
+            service: "logging-service",
+            near: None,
+            passing: true,
+            filter: None,
+        },
+            None
+        ).await.iter().map(|response| response.response.clone())
+        .fold(vec![], |mut acc:Vec<ServiceNode>, mut xs| {acc.append(&mut xs); return acc})
+        .iter().map(|a| format!("{}:{}", a.service.address, a.service.port)).collect()
+    };
+
+
+    let message_adresses: Vec<_> = {
+        consul.get_service_nodes(GetServiceNodesRequest{
+            service: "messages-service",
+            near: None,
+            passing: true,
+            filter: None,
+        },
+            None
+        ).await.iter().map(|response| response.response.clone())
+        .fold(vec![], |mut acc:Vec<ServiceNode>, mut xs| {acc.append(&mut xs); return acc})
+        .iter().map(|a| format!("{}:{}", a.service.address, a.service.port)).collect()
+    };
+
+    let produce_targets =  consul.read_key(ReadKeyRequest{
+        key: "kafka_n",
+        namespace: "",
+        datacenter: "",
+        recurse: true,
+        separator: "",
+        consistency: ConsistencyMode::Default,
+        index: None,
+        wait: Duration::from_secs(5),
+            }).await;
+        if debug {
+            println!("produce targets adress(es) found: {:?}", produce_targets);
+        }
+        let mut produce_targets = 
+        match produce_targets{
+            Ok(produce_targets) => {
+                produce_targets.response.iter().map(|response| response.value.clone()).filter(|val| val.is_some()).map(|val| val.unwrap()).collect()
+            },
+            Err(_) => vec![],
+        };
+    
+    //let logging_adresses = serde_json::from_str(&logging_adresses.unwrap_or("".to_owned())).unwrap_or(Vec::<String>::new());
 
     if debug{
         println!("Logging adresses:\n{:#?}", &logging_adresses);
@@ -100,14 +227,14 @@ fn handle_connection(mut stream: TcpStream, server_config: &str, debug:bool, kaf
                         //use std::fmt::Write;
                         use std::time::Duration;
                         use kafka::producer::{Producer, Record, RequiredAcks};
-                        let produce_targets: Vec<String> = serde_json::from_str(&get_data_from_config(server_config, "queue", debug).unwrap_or_default()).unwrap_or(vec![]);
+                        
                         for produce_to in produce_targets{
                             match Producer::from_hosts(vec!(produce_to.to_string()))
                                 .with_ack_timeout(Duration::from_secs(1))
                                 .with_required_acks(RequiredAcks::One)
                                 .create(){
                                     Ok(mut producer) => {
-                                        let res = producer.send(&Record::from_key_value(kafka_topic, id.to_string(), body.clone()));
+                                        let res = producer.send(&Record::from_key_value(&kafka_topic, id.to_string(), body.clone()));
                                         
                                         //.send(&Record::from_value(kafka_topic, format!("{id}: {body}").as_bytes()));//.unwrap();
                                         match res{
@@ -151,12 +278,8 @@ fn handle_connection(mut stream: TcpStream, server_config: &str, debug:bool, kaf
                 }
             }
             
-            let http_client = Client::new();
-            let message_adresses =  get_data_from_config(server_config, "message", debug);
-
             let mut http_result_message = None ;
 
-            let message_adresses = serde_json::from_str(&message_adresses.unwrap_or("".to_owned())).unwrap_or(Vec::<String>::new());
             if debug{
                 println!("{:#?}", &message_adresses);
             }
@@ -223,36 +346,4 @@ fn handle_connection(mut stream: TcpStream, server_config: &str, debug:bool, kaf
     }
 
     
-}
-
-
-fn get_data_from_config(server_config: &str, name: &str, debug: bool) -> Option<String>{
-    let http_client = Client::new();
-    match http_client.get(format!("http://{}/get/{}",server_config, name)).send() {
-        Ok(address) => {
-            if debug{
-                println!("{:#?}", &address);
-            }
-            match address.bytes(){
-                Ok(adress) => {             
-                    match std::str::from_utf8(&adress){
-                        Ok(actuall_adress) => {
-                            Some(actuall_adress.to_owned().to_string())},
-                        Err(err) => {
-                            println!("Error found while converting adress of {} service to UTF-8: {}", name, err);
-                            None
-                        },
-                    }
-                },
-                Err(err) =>{
-                    println!("Error found while reading adress of {} service: {}", name, err);
-                    None
-                }
-            }
-        },
-        Err(err) => {
-            println!("Response error: {}", err);
-            None
-        }
-    }
 }
