@@ -124,6 +124,9 @@ async fn handle_connection(mut stream: TcpStream, show_debug: bool, consul: &Con
             },
             Err(_) => vec![],
         };
+        if show_debug{
+            println!("Consume from: {:?}", consume_from);
+        }
 
         
         let kafka_topic_r =  consul.read_key(ReadKeyRequest{

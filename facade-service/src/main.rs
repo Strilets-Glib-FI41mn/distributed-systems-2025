@@ -182,7 +182,7 @@ async fn handle_connection(mut stream: TcpStream, debug: bool, consul: &Consul){
         if debug {
             println!("produce targets adress(es) found: {:?}", produce_targets);
         }
-        let mut produce_targets = 
+        let produce_targets = 
         match produce_targets{
             Ok(produce_targets) => {
                 produce_targets.response.iter().map(|response| response.value.clone()).filter(|val| val.is_some()).map(|val| val.unwrap()).collect()
@@ -194,6 +194,8 @@ async fn handle_connection(mut stream: TcpStream, debug: bool, consul: &Consul){
 
     if debug{
         println!("Logging adresses:\n{:#?}", &logging_adresses);
+        println!("Message adresses:\n{:#?}", &message_adresses);
+        println!("Kafka adresses:\n{:#?}", &produce_targets);
     }
     match *request.method(){
         http::Method::POST =>{
