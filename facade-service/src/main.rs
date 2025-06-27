@@ -11,7 +11,7 @@ use uuid::Uuid;
 use clap::Parser;
 //use rs_consul::{types::*, Config, Consul};
 
-use consulrs::{api::{check::common::AgentServiceCheckBuilder, features::FeaturesBuilder, kv::requests::ReadKeyRequestBuilder, service::requests::ServiceHealthRequestBuilder, Features}};
+use consulrs::api::{check::common::AgentServiceCheckBuilder, kv::requests::ReadKeyRequestBuilder};
 use consulrs::api::service::requests::RegisterServiceRequest;
 use consulrs::service;
 use std::convert::TryInto;

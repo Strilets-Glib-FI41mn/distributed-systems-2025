@@ -2,7 +2,6 @@ use std::{io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}};
 use http_reader::HttpReader;
 use clap::Parser;
 
-use uuid::Uuid;
 
 use rand::seq::SliceRandom;
 
