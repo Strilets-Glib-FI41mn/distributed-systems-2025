@@ -1,4 +1,4 @@
-use std::{collections::HashMap, env, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, str::FromStr, time::Duration};
+use std::{env, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, str::FromStr};
 
 use http_reader::HttpReader;
 
@@ -101,17 +101,17 @@ async fn handle_connection(mut stream: TcpStream, show_debug: bool, client: &Con
         let hazelcast_adress =
         match hazelcast_adress{
             Ok(hazelcast_adress) => {
-                let mut adresses = hazelcast_adress.response.iter().map(|response| response.value.clone()).filter_map(|val| val)
-                .map(|val| TryInto::<String>::try_into(val)).filter(|val| val.is_ok()).map(|v| v.unwrap())
+                let mut adresses = hazelcast_adress.response.iter().filter_map(|response| response.value.clone())
+                .flat_map(TryInto::<String>::try_into)
                 .collect::<Vec<String>>();
                 adresses.shuffle(&mut rand::rng());
-                adresses.get(0).unwrap_or(&"".to_owned()).clone()
+                adresses.first().unwrap_or(&"".to_owned()).clone()
             },
             Err(_) => "".to_owned()
         };
         let (hazelcast_ip, hazelcast_port) ={
             let split:Vec<String> = hazelcast_adress.split(":").map(|str_| str_.to_owned()).collect();
-            (split.get(0).map(|val| val.to_owned()), split.get(1).map(|val| val.to_owned()))
+            (split.first().map(|val| val.to_owned()), split.get(1).map(|val| val.to_owned()))
         };
 
         let hazelcast_map = 
@@ -119,11 +119,11 @@ async fn handle_connection(mut stream: TcpStream, show_debug: bool, client: &Con
                 Some(&mut ReadKeyRequestBuilder::default().recurse(true))).await{
     
                     Ok(hazelcast_map) => {
-                        let mut adresses = hazelcast_map.response.iter().map(|response| response.value.clone()).filter_map(|val| val)
-                        .map(|val| TryInto::<String>::try_into(val)).filter(|val| val.is_ok()).map(|v| v.unwrap())
+                        let mut adresses = hazelcast_map.response.iter().filter_map(|response| response.value.clone())
+                        .flat_map(TryInto::<String>::try_into)
                         .collect::<Vec<String>>();
                         adresses.shuffle(&mut rand::rng());
-                        adresses.get(0).map_or(None, |v| Some(v.clone()))
+                        adresses.first().cloned()
                     },
                     Err(_) => None,
                 };
@@ -156,7 +156,7 @@ async fn handle_connection(mut stream: TcpStream, show_debug: bool, client: &Con
 
                         match res{
                             Ok(response) => {
-                                stream.write_all((format!("HTTP/1.1 200 OK\nContent-Length: {}\n\n{}",response.as_bytes().len(), response)).as_bytes()).unwrap();
+                                stream.write_all((format!("HTTP/1.1 200 OK\nContent-Length: {}\n\n{}",response.len(), response)).as_bytes()).unwrap();
                             },
                             Err(_) => {
                                 let response = "HTTP/1.1 500 Internal Server Error\r\n\r\n";
@@ -184,10 +184,9 @@ async fn handle_connection(mut stream: TcpStream, show_debug: bool, client: &Con
                         Some(&mut ReadKeyRequestBuilder::default().recurse(true))).await{
             
                             Ok(cluster_name) => {
-                                cluster_name.response.iter().map(|response| response.value.clone()).filter_map(|val| val)
-                                .map(|val| TryInto::<String>::try_into(val)).filter(|val| val.is_ok()).map(|v| v.unwrap())
-                                .collect::<Vec<String>>()
-                                .get(0).map_or(None, |v| Some(v.clone()))
+                                cluster_name.response.iter().filter_map(|response| response.value.clone())
+                                .flat_map(TryInto::<String>::try_into)
+                                .collect::<Vec<String>>().first().cloned()
                             },
                             Err(_) => None,
                         };
@@ -204,11 +203,11 @@ async fn handle_connection(mut stream: TcpStream, show_debug: bool, client: &Con
                 if let Ok(output) = output{
                     match core::str::from_utf8(&output.stdout){
                         Ok(output) =>{
-                            let response = format!("HTTP/1.1 200 OK\nContent-Length: {}\n\n{}", output.as_bytes().len(), output);
+                            let response = format!("HTTP/1.1 200 OK\nContent-Length: {}\n\n{}", output.len(), output);
                             stream.write_all(response.as_bytes()).unwrap();
                         }
                         Err(er) =>{
-                            let response = format!("HTTP/1.1 500 Internal Server Error\nContent-Length: {}\n\n{}", &er.to_string().as_bytes().len(), &er.to_string());
+                            let response = format!("HTTP/1.1 500 Internal Server Error\nContent-Length: {}\n\n{}", &er.to_string().len(), &er.to_string());
                             stream.write_all(response.as_bytes()).unwrap();
                         }
                     }

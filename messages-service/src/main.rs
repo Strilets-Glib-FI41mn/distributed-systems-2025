@@ -1,4 +1,4 @@
-use std::{collections::HashMap, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, time::Duration};
+use std::{io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}};
 use http_reader::HttpReader;
 use clap::Parser;
 
@@ -112,8 +112,8 @@ async fn handle_connection(mut stream: TcpStream, show_debug: bool, client: &Con
                         Some(&mut ReadKeyRequestBuilder::default().recurse(true))).await{
 
                             Ok(consume_from) => {
-                                consume_from.response.iter().map(|response| response.value.clone()).filter_map(|val| val)
-                                .map(|val| TryInto::<String>::try_into(val)).filter(|val| val.is_ok()).map(|v| v.unwrap())
+                                consume_from.response.iter().filter_map(|response| response.value.clone())
+                                .flat_map(TryInto::<String>::try_into)
                                 .collect()
                             },
                             Err(_) => vec![],
@@ -131,13 +131,13 @@ async fn handle_connection(mut stream: TcpStream, show_debug: bool, client: &Con
         match kv::read(client, "kafka_topic", 
         Some(&mut ReadKeyRequestBuilder::default())).await{
             Ok(kafka_topic) => {
-                kafka_topic.response.iter().map(|response| response.value.clone()).filter_map(|val| val)
-                .map(|val| TryInto::<String>::try_into(val)).filter(|val| val.is_ok()).map(|v| v.unwrap())
+                kafka_topic.response.iter().filter_map(|response| response.value.clone())
+                .flat_map(TryInto::<String>::try_into)
                 .collect()
             },
             Err(_) => "".to_owned()
         };
-            match consume_from.get(0){
+            match consume_from.first(){
                 Some(address) => {
 
                 //let mut consume_from = consume_from.clone();
@@ -157,12 +157,12 @@ async fn handle_connection(mut stream: TcpStream, show_debug: bool, client: &Con
                                     if let Some(message) = ms.messages().get(1){
                                         let key = match String::from_utf8(message.key.to_vec()){
                                             Ok(key) => key,
-                                            Err(err) => format!("Instead of key found: {}", err.to_string()),
+                                            Err(err) => format!("Instead of key found: {}", err),
                                         };
     
                                         let value = match String::from_utf8(message.value.to_vec()){
                                             Ok(value) => value,
-                                            Err(err) => format!("Instead of value found: {}", err.to_string()),
+                                            Err(err) => format!("Instead of value found: {}", err),
                                         };
                                         let res_message = format!("{}: {}", key, value);
                                         if show_debug{
@@ -179,13 +179,13 @@ async fn handle_connection(mut stream: TcpStream, show_debug: bool, client: &Con
                         if show_debug{
                             println!("Found messages: {:#?}", &messages_found);
                         }
-                        if messages_found.len() > 0{
+                        if !messages_found.is_empty(){
                             let messages_sent = serde_json::to_string(&messages_found);
                             let string_used = match messages_sent{
                                 Ok(good) => good,
                                 Err(er) => er.to_string(),
                             };
-                            response = format!("HTTP/1.1 200 OK\nContent-Length: {}\n\n{}", string_used.as_bytes().len(), string_used);
+                            response = format!("HTTP/1.1 200 OK\nContent-Length: {}\n\n{}", string_used.len(), string_used);
                         }
                         },
                         Err(err) => {
@@ -193,7 +193,7 @@ async fn handle_connection(mut stream: TcpStream, show_debug: bool, client: &Con
                             if show_debug{
                                 println!("Error when trying to create consumer{:#?}", &err);
                             }
-                            response = format!("HTTP/1.1 404 NOT FOUND\nContent-Length: {}\n\n{}", err.as_bytes().len(), err);
+                            response = format!("HTTP/1.1 404 NOT FOUND\nContent-Length: {}\n\n{}", err.len(), err);
                         },
                     }
 
@@ -201,11 +201,10 @@ async fn handle_connection(mut stream: TcpStream, show_debug: bool, client: &Con
                 },
                 None => {
                     let not_found_kafka = "Not found kafka adresses";
-                    response = format!("HTTP/1.1 404 NOT FOUND\nContent-Length: {}\n\n{}", not_found_kafka.as_bytes().len(), not_found_kafka);
+                    response = format!("HTTP/1.1 404 NOT FOUND\nContent-Length: {}\n\n{}", not_found_kafka.len(), not_found_kafka);
                 },
             }
-            if consume_from.len() > 0{
-            }
+            consume_from.is_empty();
 
             
             stream.write_all(response.to_string().as_bytes());//.unwrap();

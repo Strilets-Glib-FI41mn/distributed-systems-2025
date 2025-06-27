@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, time::Duration
+    io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}
 };
 
 use http_reader::HttpReader;
@@ -112,8 +112,8 @@ async fn handle_connection(mut stream: TcpStream, debug: bool, client: &ConsulCl
             
             match kafka_topic{
                 Ok(kafka_topic) => {
-                    kafka_topic.response.iter().map(|response| response.value.clone()).filter_map(|val| val)
-                    .map(|val| TryInto::<String>::try_into(val)).filter(|val| val.is_ok()).map(|v| v.unwrap())
+                    kafka_topic.response.iter().filter_map(|response| response.value.clone())
+                    .flat_map(TryInto::<String>::try_into)
                     .collect()
                 },
                 Err(_) => "".to_owned()
@@ -129,7 +129,7 @@ async fn handle_connection(mut stream: TcpStream, debug: bool, client: &ConsulCl
         .await
         .iter()
         .map(|response| response.response.clone())
-        .fold(vec![], |mut acc:Vec<_>, mut xs| {acc.append(&mut xs); return acc})
+        .fold(vec![], |mut acc:Vec<_>, mut xs| {acc.append(&mut xs); acc})
         .iter().map(|a| format!("{}:{}", a.service.address.clone().unwrap_or("".to_owned()), a.service.port.unwrap_or(0))).collect()
     };
     logging_adresses.shuffle(&mut rand::rng());
@@ -140,7 +140,7 @@ async fn handle_connection(mut stream: TcpStream, debug: bool, client: &ConsulCl
         .await
         .iter()
         .map(|response| response.response.clone())
-        .fold(vec![], |mut acc:Vec<_>, mut xs| {acc.append(&mut xs); return acc})
+        .fold(vec![], |mut acc:Vec<_>, mut xs| {acc.append(&mut xs); acc})
         .iter().map(|a| format!("{}:{}", a.service.address.clone().unwrap_or("".to_owned()), a.service.port.unwrap_or(0))).collect()
 
     };
@@ -151,8 +151,8 @@ async fn handle_connection(mut stream: TcpStream, debug: bool, client: &ConsulCl
             Some(&mut ReadKeyRequestBuilder::default().recurse(true))).await{
 
                 Ok(produce_targets) => {
-                    produce_targets.response.iter().map(|response| response.value.clone()).filter_map(|val| val)
-                    .map(|val| TryInto::<String>::try_into(val)).filter(|val| val.is_ok()).map(|v| v.unwrap())
+                    produce_targets.response.iter().filter_map(|response| response.value.clone())
+                    .flat_map(TryInto::<String>::try_into)
                     .collect()
                 },
                 Err(_) => vec![],
@@ -228,7 +228,7 @@ async fn handle_connection(mut stream: TcpStream, debug: bool, client: &ConsulCl
 
 
                 stream.write_all(
-                    format!("HTTP/1.1 {}\n\nContent-Length: {}\n\n{}",&code, response.as_bytes().len(), &response).as_bytes()
+                    format!("HTTP/1.1 {}\n\nContent-Length: {}\n\n{}",&code, response.len(), &response).as_bytes()
                 ).unwrap();
             }
         
@@ -285,7 +285,7 @@ async fn handle_connection(mut stream: TcpStream, debug: bool, client: &ConsulCl
                             println!("{} {}\r\n", &text_1, &text_2)
                         }
                         let both_text = format!("logging: {}\n message: {}\n",  &text_1, &text_2);
-                        Some(format!("HTTP/1.1 200 OK\nContent-Length: {}\n\n{}", both_text.as_bytes().len(), both_text))
+                        Some(format!("HTTP/1.1 200 OK\nContent-Length: {}\n\n{}", both_text.len(), both_text))
                     }else{
                         None
                     }
@@ -293,12 +293,12 @@ async fn handle_connection(mut stream: TcpStream, debug: bool, client: &ConsulCl
                 (Ok(text_1), Err(message_error)) => {
                     println!("Message error: {}", message_error);
                     let both_text = format!("logging: {:#?}\n message: {}\n",  &text_1, &message_error);
-                    Some(format!("HTTP/1.1 200 OK\nContent-Length: {}\n\n{}", both_text.as_bytes().len(), both_text))                
+                    Some(format!("HTTP/1.1 200 OK\nContent-Length: {}\n\n{}", both_text.len(), both_text))                
                 },
                 (Err(logging_error), Ok(test_2)) => {
                     println!("Logging error: {}", logging_error);
                     let both_text = format!("logging: {}\n message: {:#?}\n",  &logging_error, &test_2);
-                    Some(format!("HTTP/1.1 200 OK\nContent-Length: {}\n\n{}", both_text.as_bytes().len(), both_text))
+                    Some(format!("HTTP/1.1 200 OK\nContent-Length: {}\n\n{}", both_text.len(), both_text))
                 },
                 (Err(message_error), Err(logging_error)) => {
                     println!("Message error: {}", message_error);

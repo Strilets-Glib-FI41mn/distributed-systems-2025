@@ -103,7 +103,7 @@ fn handle_connection(mut stream: TcpStream, logging_adresses: &Vec<String>, mess
                     }
                     //.unwrap_or("".to_owned());
 
-                    response = format!("HTTP/1.1 200 OK\nContent-Type: plain/text\nContent-Length: {}\n\n{}", sent_string.as_bytes().len(), sent_string);
+                    response = format!("HTTP/1.1 200 OK\nContent-Type: plain/text\nContent-Length: {}\n\n{}", sent_string.len(), sent_string);
                 }
                 "message" => {
                     let mut adresses_shuffled = messages.clone();
@@ -113,7 +113,7 @@ fn handle_connection(mut stream: TcpStream, logging_adresses: &Vec<String>, mess
                         println!("Sending message adresses {}", &sent_string);
                     }
                     //.unwrap_or("".to_owned());
-                    response = format!("HTTP/1.1 200 OK\nContent-Type: plain/text\nContent-Length: {}\n\n{}", sent_string.as_bytes().len(), sent_string);
+                    response = format!("HTTP/1.1 200 OK\nContent-Type: plain/text\nContent-Length: {}\n\n{}", sent_string.len(), sent_string);
                 },
                 "queue" => {
                     let mut adresses_shuffled = distributed_queue.clone();
@@ -123,7 +123,7 @@ fn handle_connection(mut stream: TcpStream, logging_adresses: &Vec<String>, mess
                         println!("Sending message adresses {}", &sent_string);
                     }
                     //.unwrap_or("".to_owned());
-                    response = format!("HTTP/1.1 200 OK\nContent-Type: plain/text\nContent-Length: {}\n\n{}", sent_string.as_bytes().len(), sent_string);
+                    response = format!("HTTP/1.1 200 OK\nContent-Type: plain/text\nContent-Length: {}\n\n{}", sent_string.len(), sent_string);
                 }
                 _ =>{
                     response =  "HTTP/1.1 400 Bad Request\r\n\r\n".to_owned();
