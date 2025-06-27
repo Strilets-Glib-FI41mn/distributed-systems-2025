@@ -15,5 +15,6 @@ rand = "0.9.1"
 clap = { version = "4.5.40", features = ["derive"] }
 toml = "0.8.23"
 kafka = "0.10.0"
-rs-consul = "0.12.1"
-tokio = "1.45.1"
+#rs-consul = "0.12.1"
+consulrs = "0.1.0"
+tokio = {version ="1.45.1", features = ["full"]}

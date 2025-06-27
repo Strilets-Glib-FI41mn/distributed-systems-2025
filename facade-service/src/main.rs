@@ -3,17 +3,25 @@ use std::{
 };
 
 use http_reader::HttpReader;
+use rand::seq::SliceRandom;
 //use reqwest::blocking::{Request, RequestBuilder};
 use reqwest::blocking::Client;
 use uuid::Uuid;
 
 use clap::Parser;
-use rs_consul::{types::*, Config, Consul};
+//use rs_consul::{types::*, Config, Consul};
+
+use consulrs::api::{check::common::AgentServiceCheckBuilder, kv::requests::ReadKeyRequestBuilder};
+use consulrs::api::service::requests::RegisterServiceRequest;
+use consulrs::service;
+use std::convert::TryInto;
+use consulrs::kv;
+use consulrs::client::{ConsulClient, ConsulClientSettingsBuilder};
 
 #[derive(Parser, Default,Debug)]
 struct Arguments {
     #[arg(short = 'p', long)]
-    pub port : Option<u16>,
+    pub port : Option<u64>,
     
     #[arg(value_name = "IP of facade service")]
     pub ip: Option<String>,
@@ -33,88 +41,54 @@ async fn main() {
         println!("using port {port}")
     }
 
-    
-    let consul_config = {
-        match args.consul_address{
-            Some(address) =>{
-                Config {
-                    address, 
-                    token: None, // No token required in development mode
-                    ..Default::default() // Uses default values for other settings
-                }
-            }
-            None =>{
-                Config::from_env()
-            }
-        }
-    };
-    let id = Uuid::new_v4(); //node name
-    let service_name = "facade-service"; //service name
-    let node = "facade-service"; //service name
+    let consul_adress = (args.consul_address).map_or("http://127.0.0.1:8500".to_owned(), |v| v);
+        let client = ConsulClient::new(
+            ConsulClientSettingsBuilder::default()
+                .address(&consul_adress)
+                .build()
+                .unwrap()
+        ).unwrap();
 
+    let service_name = "facade-service"; //service names
 
-    
-    let consul = Consul::new(consul_config);
     let facade_service_port = args.port.unwrap_or(8362);
     let facade_service_ip = args.ip.as_ref().map_or("127.0.0.1", |v| v);
 
     let facade_address: String = format!("127.0.0.1:{}", &port);
     let listener = TcpListener::bind(facade_address).unwrap();
-    
-    //println!("http://{facade_service_ip}:{facade_service_port}/get/health");
-    let payload = RegisterEntityPayload {
-        ID: Some(id.to_string()),
-        Node: node.to_string(),
-        Address: facade_service_ip.to_owned(), //server address
-        Datacenter: None,
-        TaggedAddresses: Default::default(),
-        NodeMeta: Default::default(),
-        Service: Some(RegisterEntityService {
-            ID: Some(facade_service_port.to_string()),
-            Service: service_name.to_string(),
-            Tags: vec![],
-            TaggedAddresses: Default::default(),
-            Meta: Default::default(),
-            Port: Some(facade_service_port), 
-            Namespace: None,
-        }),
-        Checks: vec![RegisterEntityCheck{ 
-            Node: None, CheckID: None,
-            //Node: Some(node.to_string()), CheckID: Some(id.to_string()), 
-            Name: "health".to_owned(), 
-        Notes: None,
-        //Status: None,
-        Status: Some("warning".to_owned()),
-        ServiceID: None,
-        Definition: 
-        HashMap::from([
-            
-            //("Args".to_owned(), format!("['CURL', 'http://{facade_service_ip}:{facade_service_port}/get/health']").to_owned()),
-            ("Name".to_owned(), format!("healt1").to_owned()),
-            ("Http".to_owned(), format!("http://{facade_service_ip}:{facade_service_port}/get/health").to_owned()),
-            ("Type".to_owned(), ("http").to_owned()),
-            ("Interval".to_owned(), "1s".to_owned()),
-            //("timeout".to_owned(), "4s".to_owned()),
-            ("Method".to_owned(), "GET".to_owned()), // Specify the HTTP method
-            //,
-        ])
-        }],
-        
-        SkipNodeUpdate: None,
-    };
-    if args.debug{
-        println!("{}", serde_json::to_string(&payload).unwrap_or("".into()));
-    }
-    consul.register_entity(&payload).await.expect("messages service relies on consul agent registration");
+
+    service::register(
+        &client,
+        service_name,
+        Some(
+            RegisterServiceRequest::builder()
+                .id(format!("{}",facade_service_port))
+                .address(facade_service_ip)
+                .port(facade_service_port)
+                .check(
+                    AgentServiceCheckBuilder::default()
+                        .name("health_check")
+                        .interval("10s")
+                        .http(format!("http://{facade_service_ip}:{facade_service_port}/get/health"))
+                        .status("passing")
+                        .build()
+                        .unwrap(),
+                )
+                
+                
+                ,
+        ),
+    )
+    .await.expect("messages service relies on consul agent registration");
 
     
     for stream in listener.incoming() {
         let stream = stream.unwrap();
-        handle_connection(stream,  args.debug,&consul).await//&args.server_config, &args.kafka_topic);
+        handle_connection(stream,  args.debug,&client).await//&args.server_config, &args.kafka_topic);
     }
 }
 
-async fn handle_connection(mut stream: TcpStream, debug: bool, consul: &Consul){
+async fn handle_connection(mut stream: TcpStream, debug: bool, client: &ConsulClient){
     let mut buf_reader = BufReader::new(&stream);
     let mut line_consumer = HttpReader::new(&mut buf_reader);
     let request = line_consumer.make_request();
@@ -131,24 +105,16 @@ async fn handle_connection(mut stream: TcpStream, debug: bool, consul: &Consul){
     let kafka_topic = 
     match request.method(){
         &http::Method::POST | &http::Method::GET =>{
-            let kafka_topic_r =  consul.read_key(ReadKeyRequest{
-                key: "kafka_topic",
-                namespace: "",
-                datacenter: "",
-                recurse: true,
-                separator: "",
-                consistency: ConsistencyMode::Default,
-                index: None,
-                wait: Duration::from_secs(5),
-            }).await;
-            if debug {
-                println!("kafka topic(s) found: {:?}", kafka_topic_r);
-            }
+
+            let kafka_topic = kv::read(client, "kafka_topic", 
+            Some(&mut ReadKeyRequestBuilder::default())).await;
             
-            match kafka_topic_r{
+            
+            match kafka_topic{
                 Ok(kafka_topic) => {
-                    let vector:Vec<String> = kafka_topic.response.iter().map(|response| response.value.clone()).filter(|val| val.is_some()).map(|val| val.unwrap()).collect();
-                    vector.get(0).map_or("", |v| v).to_owned()
+                    kafka_topic.response.iter().map(|response| response.value.clone()).filter_map(|val| val)
+                    .map(|val| TryInto::<String>::try_into(val)).filter(|val| val.is_ok()).map(|v| v.unwrap())
+                    .collect()
                 },
                 Err(_) => "".to_owned()
             }
@@ -158,57 +124,42 @@ async fn handle_connection(mut stream: TcpStream, debug: bool, consul: &Consul){
             return;
         }
     };
-    let logging_adresses: Vec<_> = {
-        consul
-        .get_service_nodes(GetServiceNodesRequest{
-            service: "logging-service",
-            near: None,
-            passing: true,
-            filter: None,
-        },
-            None
-        ).await.iter().map(|response| response.response.clone())
-        .fold(vec![], |mut acc:Vec<ServiceNode>, mut xs| {acc.append(&mut xs); return acc})
-        .iter().map(|a| format!("{}:{}", a.node.address, a.service.port)).collect()
+    let mut logging_adresses: Vec<_> = {
+        service::health(client, "logging-service", None)
+        .await
+        .iter()
+        .map(|response| response.response.clone())
+        .fold(vec![], |mut acc:Vec<_>, mut xs| {acc.append(&mut xs); return acc})
+        .iter().map(|a| format!("{}:{}", a.service.address.clone().unwrap_or("".to_owned()), a.service.port.unwrap_or(0))).collect()
     };
+    logging_adresses.shuffle(&mut rand::rng());
 
 
-    let message_adresses: Vec<_> = {
-        consul.get_service_nodes(GetServiceNodesRequest{
-            service: "messages-service",
-            near: None,
-            passing: true,
-            filter: None,
-        },
-            None
-        ).await.iter().map(|response| response.response.clone())
-        .fold(vec![], |mut acc:Vec<ServiceNode>, mut xs| {acc.append(&mut xs); return acc})
-        .iter().map(|a| format!("{}:{}", a.node.address, a.service.port)).collect()
+    let mut message_adresses: Vec<_> = {
+        service::health(client, "messages-service", None)
+        .await
+        .iter()
+        .map(|response| response.response.clone())
+        .fold(vec![], |mut acc:Vec<_>, mut xs| {acc.append(&mut xs); return acc})
+        .iter().map(|a| format!("{}:{}", a.service.address.clone().unwrap_or("".to_owned()), a.service.port.unwrap_or(0))).collect()
+
     };
+    message_adresses.shuffle(&mut rand::rng());
 
-    let produce_targets =  consul.read_key(ReadKeyRequest{
-        key: "kafka_address",
-        namespace: "",
-        datacenter: "",
-        recurse: true,
-        separator: "",
-        consistency: ConsistencyMode::Default,
-        index: None,
-        wait: Duration::from_secs(5),
-            }).await;
-        if debug {
-            println!("produce targets adress(es) found: {:?}", produce_targets);
-        }
-        let produce_targets = 
-        match produce_targets{
-            Ok(produce_targets) => {
-                produce_targets.response.iter().map(|response| response.value.clone()).filter(|val| val.is_some()).map(|val| val.unwrap()).collect()
-            },
-            Err(_) => vec![],
-        };
+    let mut produce_targets = 
+    match kv::read(client, "kafka_address", 
+            Some(&mut ReadKeyRequestBuilder::default().recurse(true))).await{
+
+                Ok(produce_targets) => {
+                    produce_targets.response.iter().map(|response| response.value.clone()).filter_map(|val| val)
+                    .map(|val| TryInto::<String>::try_into(val)).filter(|val| val.is_ok()).map(|v| v.unwrap())
+                    .collect()
+                },
+                Err(_) => vec![],
+            };
     
     //let logging_adresses = serde_json::from_str(&logging_adresses.unwrap_or("".to_owned())).unwrap_or(Vec::<String>::new());
-
+    produce_targets.shuffle(&mut rand::rng());
     if debug{
         println!("Logging adresses:\n{:#?}", &logging_adresses);
         println!("Message adresses:\n{:#?}", &message_adresses);
@@ -246,9 +197,8 @@ async fn handle_connection(mut stream: TcpStream, debug: bool, consul: &Consul){
                         //use std::fmt::Write;
                         use std::time::Duration;
                         use kafka::producer::{Producer, Record, RequiredAcks};
-                        
                         for produce_to in produce_targets{
-                            match Producer::from_hosts(vec!(produce_to.to_string()))
+                            match Producer::from_hosts(vec!(produce_to))
                                 .with_ack_timeout(Duration::from_secs(1))
                                 .with_required_acks(RequiredAcks::One)
                                 .create(){

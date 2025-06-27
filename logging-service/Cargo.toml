@@ -11,6 +11,7 @@ hazelcast_rest = { git = "https://github.com/Strilets-Glib-FI41mn/rust-hazelcast
 #serde = "1.0.219"
 #serde_json = "1.0.140"
 clap = { version = "4.5.40", features = ["derive"] }
-rs-consul = "0.12.1"
-tokio = "1.45.1"
+#rs-consul = "0.12.1"
+consulrs = "0.1.0"
+tokio = {version ="1.45.1", features = ["full"]}
 rand = "0.9.1"

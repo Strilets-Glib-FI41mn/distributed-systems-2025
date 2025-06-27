@@ -4,8 +4,15 @@ use clap::Parser;
 
 use uuid::Uuid;
 
-use rs_consul::{types::*, Config, Consul};
 use rand::seq::SliceRandom;
+
+
+use consulrs::api::{check::common::AgentServiceCheckBuilder, kv::requests::ReadKeyRequestBuilder};
+use consulrs::api::service::requests::RegisterServiceRequest;
+use consulrs::service;
+use std::convert::TryInto;
+use consulrs::kv;
+use consulrs::client::{ConsulClient, ConsulClientSettingsBuilder};
 
 #[derive(Parser,Default,Debug)]
 struct Arguments {
@@ -29,74 +36,58 @@ async fn main() {
     if args.debug{
         println!("{:?}",&args)
     }
-    let consul_config = {
-        match args.consul_address{
-            Some(address) =>{
-                Config {
-                    address, 
-                    token: None, // No token required in development mode
-                    ..Default::default() // Uses default values for other settings
-                }
-            }
-            None =>{
-                Config::from_env()
-            }
-        }
-    };
+    
+    let consul_adress = (args.consul_address).map_or("http://127.0.0.1:8500".to_owned(), |v| v);
+        let client = ConsulClient::new(
+            ConsulClientSettingsBuilder::default()
+                .address(&consul_adress)
+                .build()
+                .unwrap()
+        ).unwrap();
+    
     let id = Uuid::new_v4(); //node name
     let service_name = "messages-service"; //service name
     let node = "messages-service"; //service name
 
 
     
-    let consul = Consul::new(consul_config);
     let message_service_port = args.port;
     let message_service_ip = args.ip.as_ref().map_or("127.0.0.1", |v| v);
     let message_adress: String = format!("{}:{}", message_service_ip, message_service_port);
     let listener = TcpListener::bind(message_adress).unwrap();
 
 
-    let payload = RegisterEntityPayload {
-        ID: Some(id.to_string()),
-        Node: node.to_string(),
-        Address: message_service_ip.to_string(), //server address
-        Datacenter: None,
-        TaggedAddresses: Default::default(),
-        NodeMeta: Default::default(),
-        Service: Some(RegisterEntityService {
-            ID: Some(args.port.to_string()),
-            Service: service_name.to_string(),
-            Tags: vec![],
-            TaggedAddresses: Default::default(),
-            Meta: Default::default(),
-            Port: Some(message_service_port), 
-            Namespace: None,
-        }),
-        Checks: vec![RegisterEntityCheck{Node: Some(node.to_string()), CheckID: Some(id.to_string()), Name: "still_here".to_owned(), 
-        Notes: None, Status: Some("passing".to_owned()),
-        ServiceID: None, 
-        Definition: HashMap::from([
-            //("args".to_owned(), "curl localhost".to_owned()),
-            ("http".to_owned(), format!("http://{message_service_ip}:{message_service_port}/get/health").to_owned()),
-            //("name".to_owned(), "/health".to_owned()),
-            ("interval".to_owned(), "10s".to_owned()),
-            ("timeout".to_owned(), "4s".to_owned()),
-            ("method".to_owned(), "GET".to_owned()),
-        ])
-        }],
-        SkipNodeUpdate: None,
-    };
-
-    consul.register_entity(&payload).await.expect("messages service relies on consul agent registration");
-
+    service::register(
+        &client,
+        service_name,
+        Some(
+            RegisterServiceRequest::builder()
+                .id(format!("{}",message_service_port))
+                .address(message_service_ip)
+                .port(message_service_port)
+                .check(
+                    AgentServiceCheckBuilder::default()
+                        .name("health_check")
+                        .interval("10s")
+                        .http(format!("http://{message_service_ip}:{message_service_port}/get/health"))
+                        .status("passing")
+                        .build()
+                        .unwrap(),
+                )
+                
+                
+                ,
+        ),
+    )
+    .await.expect("messages service relies on consul agent registration");
     
     for stream in listener.incoming() {
         let stream = stream.unwrap();
-        handle_connection(stream, args.debug, &consul, args.consume).await;
+        handle_connection(stream, args.debug, &client, args.consume).await;
     }
 }
 
-async fn handle_connection(mut stream: TcpStream, show_debug: bool, consul: &Consul, consume: bool){
+async fn handle_connection(mut stream: TcpStream, show_debug: bool, client: &ConsulClient, consume: bool){
     let mut buf_reader = BufReader::new(&stream);
     let mut line_consumer = HttpReader::new(&mut buf_reader);
     let request = line_consumer.make_request();
@@ -114,54 +105,38 @@ async fn handle_connection(mut stream: TcpStream, show_debug: bool, consul: &Con
         http::Method::GET => {
             let mut response = "HTTP/1.1 501 Not Implemented\r\n\r\n".to_string();
             let mut messages_found = vec![];
-            let consume_from_r =  consul.read_key(ReadKeyRequest{
-                key: "kafka_address",
-                namespace: "",
-                datacenter: "",
-                recurse: true,
-                separator: "",
-                consistency: ConsistencyMode::Default,
-                index: None,
-                wait: Duration::from_secs(5),
-            }).await;
+
+
+            let mut consume_from = 
+                match kv::read(client, "kafka_address", 
+                        Some(&mut ReadKeyRequestBuilder::default().recurse(true))).await{
+
+                            Ok(consume_from) => {
+                                consume_from.response.iter().map(|response| response.value.clone()).filter_map(|val| val)
+                                .map(|val| TryInto::<String>::try_into(val)).filter(|val| val.is_ok()).map(|v| v.unwrap())
+                                .collect()
+                            },
+                            Err(_) => vec![],
+                        };
+                
+                //let logging_adresses = serde_json::from_str(&logging_adresses.unwrap_or("".to_owned())).unwrap_or(Vec::<String>::new());
+                consume_from.shuffle(&mut rand::rng());
+
         if show_debug {
-            println!("consume from adress(es) found: {:?}", consume_from_r);
-        }
-        let mut consume_from = 
-        match consume_from_r{
-            Ok(consume_from) => {
-                consume_from.response.iter().map(|response| response.value.clone()).filter(|val| val.is_some()).map(|val| val.unwrap()).collect()
-            },
-            Err(_) => vec![],
-        };
-        if show_debug{
-            println!("Consume from: {:?}", consume_from);
+            println!("consume from adress(es) found: {:?}", consume_from);
         }
 
         
-        let kafka_topic_r =  consul.read_key(ReadKeyRequest{
-            key: "kafka_topic",
-            namespace: "",
-            datacenter: "",
-            recurse: true,
-            separator: "",
-            consistency: ConsistencyMode::Default,
-            index: None,
-            wait: Duration::from_secs(5),
-        }).await;
-        if show_debug {
-            println!("kafka topic(s) found: {:?}", kafka_topic_r);
-        }
-        let kafka_topic = 
-        match kafka_topic_r{
+        let kafka_topic =
+        match kv::read(client, "kafka_topic", 
+        Some(&mut ReadKeyRequestBuilder::default())).await{
             Ok(kafka_topic) => {
-                let vector:Vec<String> = kafka_topic.response.iter().map(|response| response.value.clone()).filter(|val| val.is_some()).map(|val| val.unwrap()).collect();
-                vector.get(0).unwrap_or(&"".to_owned()).to_owned()
+                kafka_topic.response.iter().map(|response| response.value.clone()).filter_map(|val| val)
+                .map(|val| TryInto::<String>::try_into(val)).filter(|val| val.is_ok()).map(|v| v.unwrap())
+                .collect()
             },
-            Err(_) => "".to_owned(),
+            Err(_) => "".to_owned()
         };
-
-            consume_from.shuffle(&mut rand::rng());
             match consume_from.get(0){
                 Some(address) => {
 
