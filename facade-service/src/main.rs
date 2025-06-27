@@ -1,5 +1,5 @@
 use std::{
-    error::Error, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}
+    io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}
 };
 
 use http_reader::HttpReader;

@@ -1,4 +1,4 @@
-use std::{any::Any, env, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, str::FromStr};
+use std::{env, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, str::FromStr};
 
 use http_reader::HttpReader;
 
@@ -10,7 +10,7 @@ use rand::seq::SliceRandom;
 use clap::Parser;
 
 
-use consulrs::{api::{check::{common::{AgentCheckBuilder, HealthCheckDefinitionBuilder}, requests::RegisterCheckRequestBuilder}, features::FeaturesBuilder, kv::requests::ReadKeyRequestBuilder}, session};
+use consulrs::api::kv::requests::ReadKeyRequestBuilder;
 use consulrs::api::service::requests::RegisterServiceRequest;
 use consulrs::service;
 use std::convert::TryInto;
@@ -28,9 +28,7 @@ struct Arguments {
     pub debug: bool,
     
     #[arg(long, value_name = "consul adress OPTIONAL")]
-    pub consul_address: Option<String>,
-    #[arg(long)]
-    pub hazelcast_number: Option<u16>
+    pub consul_address: Option<String>
 }
 
 #[tokio::main]
@@ -73,67 +71,13 @@ async fn main() {
     )
     .await.expect("messages service relies on consul agent registration");
     
-/*
-    consulrs::check::register(&client,  &format!("{service_name}-{logging_service_port}").to_owned(),
-        Some(
-            &mut RegisterCheckRequestBuilder::default()
-            .features(
-                FeaturesBuilder::default()
-                //.filter(format!("id == '{}-{}'", service_name, logging_service_port)).build().unwrap()
-                //.filter(format!("ServiceID == '{}'", service_name)).build().unwrap()
-            )
-        .interval("10s")
-        .http(format!("http://{logging_service_ip}:{logging_service_port}/get/health"))
-        //.alias_node(format!("{service_name}-{id}"))
-        //.alias_service(format!("{service_name}-{logging_service_port}"))
-        //.alias_service(format!("{service_name}"))
-        
-        )
-    ).await.unwrap();
-    */
-
-
-    /*
-    
-    let check = AgentCheckBuilder::default()
-    .definition(
-        HealthCheckDefinitionBuilder::default()
-        
-        .interval_duration("10s")
-        .http(format!("http://{logging_service_ip}:{logging_service_port}/get/health")
-    ).build().unwrap()
-    )
-    .name("Node Health Check")
-    
-    //.interval("10s")
-    //.http(format!("http://{logging_service_ip}:{logging_service_port}/get/health")) // Adjust the endpoint as needed
-    .status("passing")
-    .build()
-    .unwrap();
-
-
-    let res = consulrs::catalog::register(
-        &client,
-        &format!("{}",logging_service_port).to_owned(),
-        logging_service_ip,
-        Some(
-            consulrs::api::catalog::requests::RegisterEntityRequest::builder()
-                .check(check)
-                .node(format!("{}",logging_service_port))
-                .address(logging_service_ip)
-                //.port(logging_service_port)
-        ),
-    )
-    .await;
-     */
-    //println!("{:?}", res);
     for stream in listener.incoming() {
         let stream = stream.unwrap();
-        handle_connection(stream, args.debug, &client, args.hazelcast_number).await;
+        handle_connection(stream, args.debug, &client).await;
     }
 }
 
-async fn handle_connection(mut stream: TcpStream, show_debug: bool, client: &ConsulClient, hazelcast_number: Option<u16>){
+async fn handle_connection(mut stream: TcpStream, show_debug: bool, client: &ConsulClient){
     let mut buf_reader = BufReader::new(&stream);
     let mut line_consumer = HttpReader::new(&mut buf_reader);
     let request = line_consumer.make_request();
@@ -159,7 +103,7 @@ async fn handle_connection(mut stream: TcpStream, show_debug: bool, client: &Con
                 let mut adresses = hazelcast_adress.response.iter().filter_map(|response| response.value.clone())
                 .flat_map(TryInto::<String>::try_into)
                 .collect::<Vec<String>>();
-                //adresses.shuffle(&mut rand::rng());
+                adresses.shuffle(&mut rand::rng());
                 adresses.first().unwrap_or(&"".to_owned()).clone()
             },
             Err(_) => "".to_owned()
@@ -177,7 +121,7 @@ async fn handle_connection(mut stream: TcpStream, show_debug: bool, client: &Con
                         let mut adresses = hazelcast_map.response.iter().filter_map(|response| response.value.clone())
                         .flat_map(TryInto::<String>::try_into)
                         .collect::<Vec<String>>();
-                        //adresses.shuffle(&mut rand::rng());
+                        adresses.shuffle(&mut rand::rng());
                         adresses.first().cloned()
                     },
                     Err(_) => None,
@@ -189,9 +133,6 @@ async fn handle_connection(mut stream: TcpStream, show_debug: bool, client: &Con
         stream.write_all(response.as_bytes()).unwrap();
         return;
     }
-
-
-            
     };
 
     match *request.method(){
