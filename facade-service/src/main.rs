@@ -136,7 +136,7 @@ async fn handle_connection(mut stream: TcpStream, debug: bool, client: &ConsulCl
         .fold(vec![], |mut acc:Vec<_>, mut xs| {acc.append(&mut xs); acc})
         .iter().map(|a| format!("{}:{}", a.service.address.clone().unwrap_or("".to_owned()), a.service.port.unwrap_or(0))).collect()
     };
-    logging_adresses.shuffle(&mut rand::rng());
+    //logging_adresses.shuffle(&mut rand::rng());
 
 
     let mut message_adresses: Vec<_> = {
@@ -150,7 +150,7 @@ async fn handle_connection(mut stream: TcpStream, debug: bool, client: &ConsulCl
         .iter().map(|a| format!("{}:{}", a.service.address.clone().unwrap_or("".to_owned()), a.service.port.unwrap_or(0))).collect()
 
     };
-    message_adresses.shuffle(&mut rand::rng());
+    //message_adresses.shuffle(&mut rand::rng());
 
     let mut produce_targets = 
     match kv::read(client, "kafka_address", 
@@ -165,7 +165,7 @@ async fn handle_connection(mut stream: TcpStream, debug: bool, client: &ConsulCl
             };
     
     //let logging_adresses = serde_json::from_str(&logging_adresses.unwrap_or("".to_owned())).unwrap_or(Vec::<String>::new());
-    produce_targets.shuffle(&mut rand::rng());
+    //produce_targets.shuffle(&mut rand::rng());
     if debug{
         println!("Logging adresses:\n{:#?}", &logging_adresses);
         println!("Message adresses:\n{:#?}", &message_adresses);

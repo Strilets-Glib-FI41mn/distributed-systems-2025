@@ -149,7 +149,7 @@ async fn handle_connection(mut stream: TcpStream, show_debug: bool, client: &Con
                 let mut adresses = hazelcast_adress.response.iter().filter_map(|response| response.value.clone())
                 .flat_map(TryInto::<String>::try_into)
                 .collect::<Vec<String>>();
-                adresses.shuffle(&mut rand::rng());
+                //adresses.shuffle(&mut rand::rng());
                 adresses.first().unwrap_or(&"".to_owned()).clone()
             },
             Err(_) => "".to_owned()
@@ -167,7 +167,7 @@ async fn handle_connection(mut stream: TcpStream, show_debug: bool, client: &Con
                         let mut adresses = hazelcast_map.response.iter().filter_map(|response| response.value.clone())
                         .flat_map(TryInto::<String>::try_into)
                         .collect::<Vec<String>>();
-                        adresses.shuffle(&mut rand::rng());
+                        //adresses.shuffle(&mut rand::rng());
                         adresses.first().cloned()
                     },
                     Err(_) => None,
