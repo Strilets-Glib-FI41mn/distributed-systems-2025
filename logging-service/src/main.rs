@@ -84,6 +84,13 @@ async fn handle_connection(mut stream: TcpStream, show_debug: bool, client: &Con
     let mut buf_reader = BufReader::new(&stream);
     let mut line_consumer = HttpReader::new(&mut buf_reader);
     let request = line_consumer.make_request();
+
+    if request.method() == &http::Method::GET && request.uri().path().split("/").collect::<Vec<_>>().get(2) == Some(&"health"){
+        stream.write_all("HTTP/1.1 200 OK\r\n\r\n".to_owned().as_bytes()).unwrap();
+        //stream.write_all("HTTP/1.1 429\r\n\r\n".to_owned().as_bytes()).unwrap();
+        return;
+    }
+
     let response = "HTTP/1.1 401 Not Implemented\r\n\r\n".to_owned();
     if show_debug {println!("{:?}", request);}
     if request.method() == &http::Method::GET && request.uri().path().split("/").collect::<Vec<_>>().get(2) == Some(&"health"){

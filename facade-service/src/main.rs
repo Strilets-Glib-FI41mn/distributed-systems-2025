@@ -270,7 +270,13 @@ async fn handle_connection(mut stream: TcpStream, debug: bool, client: &ConsulCl
                 }
             }
             }
-            
+            match  (&http_result_logging, &http_result_message){
+                (Some(_), Some(_)) => {},
+                _ =>{
+                    stream.write_all("HTTP/1.1 500 Internal Server Error\r\n\r\n".to_owned().as_bytes());
+                    return
+                }
+            }
             let (http_result_logging_res, http_result_message_res) = (http_result_logging.expect("logging addresses were not provided"), http_result_message.expect("message adresses were not provided"));
 
             let response = 
