@@ -46,7 +46,6 @@ async fn main() {
                 .unwrap()
         ).unwrap();
     let service_name = "logging-service"; //service name
-    let id = Uuid::new_v4();
     let logging_service_port = args.port;
     let logging_service_ip = args.ip.as_ref().map_or("127.0.0.1", |v| v);
     let logging_adress: String = format!("{}:{}", logging_service_ip, logging_service_port);
@@ -60,17 +59,27 @@ async fn main() {
                 .name(format!("{service_name}-{logging_service_port}"))
                 .address(logging_service_ip)
                 .port(logging_service_port)
+                
+                .check(
+                    consulrs::api::check::common::AgentServiceCheckBuilder::default()
+                        .name("health_check")
+                        .interval("10s")
+                        .http(format!("http://{logging_service_ip}:{logging_service_port}/get/health"))
+                        .status("passing")
+                        .build()
+                        .unwrap(),
+                )
         ),
     )
     .await.expect("messages service relies on consul agent registration");
     
-
+/*
     consulrs::check::register(&client,  &format!("{service_name}-{logging_service_port}").to_owned(),
         Some(
             &mut RegisterCheckRequestBuilder::default()
             .features(
                 FeaturesBuilder::default()
-                .filter(format!("id == '{}-{}'", service_name, logging_service_port)).build().unwrap()
+                //.filter(format!("id == '{}-{}'", service_name, logging_service_port)).build().unwrap()
                 //.filter(format!("ServiceID == '{}'", service_name)).build().unwrap()
             )
         .interval("10s")
@@ -81,6 +90,7 @@ async fn main() {
         
         )
     ).await.unwrap();
+    */
 
 
     /*

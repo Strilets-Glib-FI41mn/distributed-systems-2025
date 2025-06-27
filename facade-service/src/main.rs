@@ -1,5 +1,5 @@
 use std::{
-    io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}
+    error::Error, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}
 };
 
 use http_reader::HttpReader;
@@ -11,7 +11,7 @@ use uuid::Uuid;
 use clap::Parser;
 //use rs_consul::{types::*, Config, Consul};
 
-use consulrs::api::{check::common::AgentServiceCheckBuilder, features::FeaturesBuilder, kv::requests::ReadKeyRequestBuilder, service::requests::ServiceHealthRequestBuilder, Features};
+use consulrs::{api::{check::common::AgentServiceCheckBuilder, features::FeaturesBuilder, kv::requests::ReadKeyRequestBuilder, service::requests::ServiceHealthRequestBuilder, Features}};
 use consulrs::api::service::requests::RegisterServiceRequest;
 use consulrs::service;
 use std::convert::TryInto;
@@ -49,6 +49,13 @@ async fn main() {
                 .unwrap()
         ).unwrap();
 
+    let consul_config = rs_consul::Config {
+            address: consul_adress.to_string(), 
+            token: None, // No token required in development mode
+            ..Default::default() // Uses default values for other settings
+    };
+    let rs_consul_loc = rs_consul::Consul::new(consul_config);
+        
     let service_name = "facade-service"; //service names
 
     let facade_service_port = args.port.unwrap_or(8362);
@@ -77,9 +84,6 @@ async fn main() {
                         .build()
                         .unwrap(),
                 )
-                
-                
-                ,
         ),
     )
     .await.expect("messages service relies on consul agent registration");
@@ -87,11 +91,11 @@ async fn main() {
     
     for stream in listener.incoming() {
         let stream = stream.unwrap();
-        handle_connection(stream,  args.debug,&client).await//&args.server_config, &args.kafka_topic);
+        handle_connection(stream,  args.debug, &client, &rs_consul_loc).await//&args.server_config, &args.kafka_topic);
     }
 }
 
-async fn handle_connection(mut stream: TcpStream, debug: bool, client: &ConsulClient){
+async fn handle_connection(mut stream: TcpStream, debug: bool, client: &ConsulClient,  rs_consul_loc: &rs_consul::Consul){
     let mut buf_reader = BufReader::new(&stream);
     let mut line_consumer = HttpReader::new(&mut buf_reader);
     let request = line_consumer.make_request();
@@ -128,29 +132,20 @@ async fn handle_connection(mut stream: TcpStream, debug: bool, client: &ConsulCl
             return;
         }
     };
-    let mut logging_adresses: Vec<_> = {
-        service::health(client, "logging-service", None)
-        .await
-        .iter()
-        .map(|response| response.response.clone())
-        .fold(vec![], |mut acc:Vec<_>, mut xs| {acc.append(&mut xs); acc})
-        .iter().map(|a| format!("{}:{}", a.service.address.clone().unwrap_or("".to_owned()), a.service.port.unwrap_or(0))).collect()
+    let srv = consulrs::catalog::services(client, None).await;
+    /*if let Ok(srv) = srv{
+        println!("{:#?}",srv);
+    }*/
+    let logging_adresses: Vec<_> = {
+        rs_consul_loc.get_service_addresses_and_ports("logging-service", None).await.unwrap()
+        .iter().map(|(addr, port)| format!("{}:{}", addr, port)).collect()
     };
-    //logging_adresses.shuffle(&mut rand::rng());
-
 
     let mut message_adresses: Vec<_> = {
-        //service::health(client, "messages-service", None)
-        service::health(client, "messages-service", Some(&mut ServiceHealthRequestBuilder::default()
-        .features(FeaturesBuilder::default().filter("not Checks.Status != passing".to_string()).build().unwrap())
-        )).await
-        .iter()
-        .map(|response| response.response.clone())
-        .fold(vec![], |mut acc:Vec<_>, mut xs| {acc.append(&mut xs); acc})
-        .iter().map(|a| format!("{}:{}", a.service.address.clone().unwrap_or("".to_owned()), a.service.port.unwrap_or(0))).collect()
-
+        rs_consul_loc.get_service_addresses_and_ports("messages-service", None).await.unwrap()
+        .iter().map(|(addr, port)| format!("{}:{}", addr, port)).collect()
     };
-    //message_adresses.shuffle(&mut rand::rng());
+    message_adresses.shuffle(&mut rand::rng());
 
     let mut produce_targets = 
     match kv::read(client, "kafka_address", 
@@ -165,7 +160,7 @@ async fn handle_connection(mut stream: TcpStream, debug: bool, client: &ConsulCl
             };
     
     //let logging_adresses = serde_json::from_str(&logging_adresses.unwrap_or("".to_owned())).unwrap_or(Vec::<String>::new());
-    //produce_targets.shuffle(&mut rand::rng());
+    produce_targets.shuffle(&mut rand::rng());
     if debug{
         println!("Logging adresses:\n{:#?}", &logging_adresses);
         println!("Message adresses:\n{:#?}", &message_adresses);
