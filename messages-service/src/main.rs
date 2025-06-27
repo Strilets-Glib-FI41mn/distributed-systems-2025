@@ -45,9 +45,7 @@ async fn main() {
                 .unwrap()
         ).unwrap();
     
-    let id = Uuid::new_v4(); //node name
     let service_name = "messages-service"; //service name
-    let node = "messages-service"; //service name
 
 
     
@@ -91,13 +89,13 @@ async fn handle_connection(mut stream: TcpStream, show_debug: bool, client: &Con
     let mut buf_reader = BufReader::new(&stream);
     let mut line_consumer = HttpReader::new(&mut buf_reader);
     let request = line_consumer.make_request();
-    if show_debug {
-        println!("{:?}", request);
-        //println!("{:#?}", consul.get_all_registered_service_names(None));
-    }
     if request.method() == &http::Method::GET && request.uri().path().split("/").collect::<Vec<_>>().get(2) == Some(&"health"){
         stream.write_all("HTTP/1.1 200 OK\r\n\r\n".to_owned().as_bytes()).unwrap();
         return;
+    }
+    if show_debug {
+        println!("{:?}", request);
+        //println!("{:#?}", consul.get_all_registered_service_names(None));
     }
 
 

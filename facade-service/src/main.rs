@@ -11,7 +11,7 @@ use uuid::Uuid;
 use clap::Parser;
 //use rs_consul::{types::*, Config, Consul};
 
-use consulrs::api::{check::common::AgentServiceCheckBuilder, kv::requests::ReadKeyRequestBuilder};
+use consulrs::api::{check::common::AgentServiceCheckBuilder, features::FeaturesBuilder, kv::requests::ReadKeyRequestBuilder, service::requests::ServiceHealthRequestBuilder, Features};
 use consulrs::api::service::requests::RegisterServiceRequest;
 use consulrs::service;
 use std::convert::TryInto;
@@ -62,11 +62,14 @@ async fn main() {
         service_name,
         Some(
             RegisterServiceRequest::builder()
+                
+                //.features(FeaturesBuilder::default().filter("not Checks.Status != passing".to_string()).build().unwrap())
                 .id(format!("{}",facade_service_port))
                 .address(facade_service_ip)
                 .port(facade_service_port)
                 .check(
                     AgentServiceCheckBuilder::default()
+                        
                         .name("health_check")
                         .interval("10s")
                         .http(format!("http://{facade_service_ip}:{facade_service_port}/get/health"))
@@ -92,12 +95,13 @@ async fn handle_connection(mut stream: TcpStream, debug: bool, client: &ConsulCl
     let mut buf_reader = BufReader::new(&stream);
     let mut line_consumer = HttpReader::new(&mut buf_reader);
     let request = line_consumer.make_request();
-    if debug{println!("Request aquired:\n{:?}", request);}
     if request.method() == &http::Method::GET && request.uri().path().split("/").collect::<Vec<_>>().get(2) == Some(&"health"){
         stream.write_all("HTTP/1.1 200 OK\r\n\r\n".to_owned().as_bytes()).unwrap();
         //stream.write_all("HTTP/1.1 429\r\n\r\n".to_owned().as_bytes()).unwrap();
         return;
     }
+
+    if debug{println!("Request aquired:\n{:?}", request);}
     
     let mut response = "HTTP/1.1 401 Not Implemented\r\n\r\n".to_owned();
 
@@ -136,8 +140,10 @@ async fn handle_connection(mut stream: TcpStream, debug: bool, client: &ConsulCl
 
 
     let mut message_adresses: Vec<_> = {
-        service::health(client, "messages-service", None)
-        .await
+        //service::health(client, "messages-service", None)
+        service::health(client, "messages-service", Some(&mut ServiceHealthRequestBuilder::default()
+        .features(FeaturesBuilder::default().filter("not Checks.Status != passing".to_string()).build().unwrap())
+        )).await
         .iter()
         .map(|response| response.response.clone())
         .fold(vec![], |mut acc:Vec<_>, mut xs| {acc.append(&mut xs); acc})

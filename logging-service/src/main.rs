@@ -1,4 +1,4 @@
-use std::{env, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, str::FromStr};
+use std::{any::Any, env, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, str::FromStr};
 
 use http_reader::HttpReader;
 
@@ -10,7 +10,7 @@ use rand::seq::SliceRandom;
 use clap::Parser;
 
 
-use consulrs::api::{check::common::AgentServiceCheckBuilder, kv::requests::ReadKeyRequestBuilder};
+use consulrs::{api::{check::{common::{AgentCheckBuilder, HealthCheckDefinitionBuilder}, requests::RegisterCheckRequestBuilder}, features::FeaturesBuilder, kv::requests::ReadKeyRequestBuilder}, session};
 use consulrs::api::service::requests::RegisterServiceRequest;
 use consulrs::service;
 use std::convert::TryInto;
@@ -46,8 +46,7 @@ async fn main() {
                 .unwrap()
         ).unwrap();
     let service_name = "logging-service"; //service name
-
-
+    let id = Uuid::new_v4();
     let logging_service_port = args.port;
     let logging_service_ip = args.ip.as_ref().map_or("127.0.0.1", |v| v);
     let logging_adress: String = format!("{}:{}", logging_service_ip, logging_service_port);
@@ -57,23 +56,67 @@ async fn main() {
         service_name,
         Some(
             RegisterServiceRequest::builder()
-                .id(format!("{}",logging_service_port))
-                .address(service_name)
+                .id(format!("{service_name}-{logging_service_port}"))
+                .name(format!("{service_name}-{logging_service_port}"))
+                .address(logging_service_ip)
                 .port(logging_service_port)
-                .check(
-                    AgentServiceCheckBuilder::default()
-                        .name("health_check")
-                        .interval("10s")
-                        .http(format!("{logging_service_ip}:{logging_service_port}/get/health"))
-                        .status("passing")
-                        .build()
-                        .unwrap(),
-                ),
         ),
     )
     .await.expect("messages service relies on consul agent registration");
-
     
+
+    consulrs::check::register(&client,  &format!("{service_name}-{logging_service_port}").to_owned(),
+        Some(
+            &mut RegisterCheckRequestBuilder::default()
+            .features(
+                FeaturesBuilder::default()
+                .filter(format!("id == '{}-{}'", service_name, logging_service_port)).build().unwrap()
+                //.filter(format!("ServiceID == '{}'", service_name)).build().unwrap()
+            )
+        .interval("10s")
+        .http(format!("http://{logging_service_ip}:{logging_service_port}/get/health"))
+        //.alias_node(format!("{service_name}-{id}"))
+        //.alias_service(format!("{service_name}-{logging_service_port}"))
+        //.alias_service(format!("{service_name}"))
+        
+        )
+    ).await.unwrap();
+
+
+    /*
+    
+    let check = AgentCheckBuilder::default()
+    .definition(
+        HealthCheckDefinitionBuilder::default()
+        
+        .interval_duration("10s")
+        .http(format!("http://{logging_service_ip}:{logging_service_port}/get/health")
+    ).build().unwrap()
+    )
+    .name("Node Health Check")
+    
+    //.interval("10s")
+    //.http(format!("http://{logging_service_ip}:{logging_service_port}/get/health")) // Adjust the endpoint as needed
+    .status("passing")
+    .build()
+    .unwrap();
+
+
+    let res = consulrs::catalog::register(
+        &client,
+        &format!("{}",logging_service_port).to_owned(),
+        logging_service_ip,
+        Some(
+            consulrs::api::catalog::requests::RegisterEntityRequest::builder()
+                .check(check)
+                .node(format!("{}",logging_service_port))
+                .address(logging_service_ip)
+                //.port(logging_service_port)
+        ),
+    )
+    .await;
+     */
+    //println!("{:?}", res);
     for stream in listener.incoming() {
         let stream = stream.unwrap();
         handle_connection(stream, args.debug, &client, args.hazelcast_number).await;
@@ -90,13 +133,8 @@ async fn handle_connection(mut stream: TcpStream, show_debug: bool, client: &Con
         //stream.write_all("HTTP/1.1 429\r\n\r\n".to_owned().as_bytes()).unwrap();
         return;
     }
-
     let response = "HTTP/1.1 401 Not Implemented\r\n\r\n".to_owned();
-    if show_debug {println!("{:?}", request);}
-    if request.method() == &http::Method::GET && request.uri().path().split("/").collect::<Vec<_>>().get(2) == Some(&"health"){
-        stream.write_all("HTTP/1.1 200 OK\r\n\r\n".to_owned().as_bytes()).unwrap();
-        return;
-    }
+
 
     let (hazelcast_map, hazelcast_ip, hazelcast_port) =
     match *request.method() {
@@ -229,3 +267,4 @@ async fn handle_connection(mut stream: TcpStream, show_debug: bool, client: &Con
     }
 
 }
+
